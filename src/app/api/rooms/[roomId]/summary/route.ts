@@ -4,12 +4,15 @@ import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
 export async function POST(
   _request: NextRequest,
   { params }: { params: { roomId: string } }
 ) {
+  if (!process.env.OPENAI_API_KEY) {
+    return NextResponse.json({ error: 'OPENAI_API_KEY が設定されていません' }, { status: 500 });
+  }
+  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
   const room = await prisma.room.findUnique({
     where: { id: params.roomId },
     include: {
@@ -18,9 +21,6 @@ export async function POST(
     },
   });
   if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
-  if (!process.env.OPENAI_API_KEY) {
-    return NextResponse.json({ error: 'OPENAI_API_KEY が設定されていません' }, { status: 500 });
-  }
 
   const counts = room.reactions.reduce<Record<string, number>>((acc, r) => {
     acc[r.type] = (acc[r.type] ?? 0) + 1;

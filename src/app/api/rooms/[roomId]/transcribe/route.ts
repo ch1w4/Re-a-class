@@ -4,17 +4,17 @@ import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
 export async function POST(
   request: NextRequest,
   { params }: { params: { roomId: string } }
 ) {
-  const room = await prisma.room.findUnique({ where: { id: params.roomId } });
-  if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
   if (!process.env.OPENAI_API_KEY) {
     return NextResponse.json({ error: 'OPENAI_API_KEY が設定されていません' }, { status: 500 });
   }
+  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+  const room = await prisma.room.findUnique({ where: { id: params.roomId } });
+  if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
 
   const formData = await request.formData();
   const audioFile = formData.get('audio') as File | null;
