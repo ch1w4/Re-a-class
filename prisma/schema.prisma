@@ -1,0 +1,58 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Room {
+  id          String        @id
+  name        String
+  teacherName String
+  createdAt   DateTime      @default(now())
+  endedAt     DateTime?
+  chatEnabled  Boolean       @default(false)
+  notes        String        @default("")
+  transcript   String        @default("")
+  summary      String        @default("")
+  messages    ChatMessage[]
+  reactions   Reaction[]
+  surveys     Survey[]
+}
+
+model ChatMessage {
+  id        String   @id @default(uuid())
+  content   String
+  studentId String
+  timestamp DateTime @default(now())
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId    String
+}
+
+model Reaction {
+  id        String   @id @default(uuid())
+  type      String
+  timestamp DateTime @default(now())
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId    String
+}
+
+model Survey {
+  id        String         @id @default(uuid())
+  question  String
+  isOpen    Boolean        @default(true)
+  createdAt DateTime       @default(now())
+  room      Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId    String
+  options   SurveyOption[]
+}
+
+model SurveyOption {
+  id       String @id @default(uuid())
+  text     String
+  votes    Int    @default(0)
+  survey   Survey @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  surveyId String
+}

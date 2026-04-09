@@ -1,0 +1,1 @@
+ALTER TABLE "Room" ADD COLUMN "transcript" TEXT NOT NULL DEFAULT '';
