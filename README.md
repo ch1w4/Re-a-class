@@ -10,19 +10,19 @@
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 講義中に発言しにくい環境でも、生徒が匿名でリアクション・質問・チャットを送れます。  
-教師は授業の録音から AI 要約を自動生成し、授業改善に活用できます。
+授業終了後はAIが復習ノートを自動生成し、生徒がいつでも見返せます。
 
 ---
 
 ## 機能一覧
 
 ### 教師側
-- ルーム作成・QR コード発行（生徒はQRを読むだけで参加）
+- ルーム作成・QR コード発行（生徒はQRを読むだけで参加）・QRコード画像ダウンロード
 - リアクション集計のリアルタイム表示
 - 生徒からの個人チャット受信（匿名ラベル：生徒A, 生徒B…）
 - アンケート作成・結果表示・締め切り
-- 授業の録音 → Whisper で自動書き起こし
-- GPT-4o-mini による授業要約レポート生成・ダウンロード
+- ブラウザ内蔵の音声認識（Web Speech API）でリアルタイム書き起こし（無料・Chrome推奨）
+- Groq AI（Llama 3.3）による生徒向け復習ノート生成・Markdownダウンロード
 - 授業終了（終了後は生徒からの入力を全てブロック）
 
 ### 生徒側
@@ -30,7 +30,7 @@
 - 5種類のリアクション送信（理解した・わからない・質問あり・ゆっくり・速く）
 - 先生だけに届く個人チャット（他の生徒には見えない）
 - アンケート回答・結果閲覧
-- 授業要約の閲覧
+- 授業後の復習ノート閲覧（ポイント・用語・確認問題付き）
 
 ---
 
@@ -43,7 +43,8 @@
 | バックエンド | Next.js API Routes |
 | データベース | PostgreSQL 16 |
 | ORM | Prisma 5 |
-| AI | OpenAI Whisper (音声書き起こし) / GPT-4o-mini (要約) |
+| 音声書き起こし | Web Speech API（ブラウザ内蔵・無料） |
+| AI 要約 | Groq API / Llama 3.3 70B（無料枠あり） |
 | インフラ | Docker / Docker Compose |
 
 ---
@@ -67,9 +68,8 @@
                └──────────────┘
                       ↕
                ┌──────────────┐
-               │  OpenAI API  │
-               │  Whisper     │
-               │  GPT-4o-mini │
+               │   Groq API   │
+               │  Llama 3.3   │
                └──────────────┘
 ```
 
@@ -79,7 +79,7 @@
 
 ### 必要なもの
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/)
-- OpenAI API キー（[platform.openai.com](https://platform.openai.com/api-keys)）
+- Groq API キー（[console.groq.com](https://console.groq.com)）※無料・クレジットカード不要
 
 ### 手順
 
@@ -94,10 +94,10 @@ cd Re-a-class
 cp .env.example .env
 ```
 
-`.env` を開いて `OPENAI_API_KEY` に取得したキーを入力：
+`.env` を開いて `GROQ_API_KEY` に取得したキーを入力：
 ```env
 DATABASE_URL="postgresql://reaclass:reaclass_pass@localhost:5432/reaclass"
-OPENAI_API_KEY="sk-proj-..."
+GROQ_API_KEY="gsk_..."
 ```
 
 **3. 起動**
@@ -118,17 +118,17 @@ docker compose up --build
 ### 授業の始め方
 1. トップページで「**教師として開始**」を選択
 2. 教師名・授業名を入力してルーム作成
-3. 表示された **QR コードを画面に投影** → 生徒がスマホで読み取り参加
+3. 表示された **QR コードを画面に投影** → 生徒がスマホで読み取り参加（QR画像のダウンロードも可能）
 
 ### 授業中
 - 教師画面でリアクションや質問をリアルタイムで確認
-- 「**録音開始**」で授業音声を録音（停止後に Whisper で自動書き起こし）
+- 「**録音開始**」でブラウザの音声認識が起動し、リアルタイムで書き起こし（Chrome推奨）
 - 必要に応じてアンケートを作成・投票
 
 ### 授業の終わり
-1. 「**要約を生成する**」で AI が書き起こし・リアクション・アンケートから授業レポートを生成
+1. 「**要約を生成する**」で AI が書き起こし・アンケートをもとに生徒向け復習ノートを生成
 2. 「**授業終了**」で生徒からの入力をブロック
-3. 要約を Markdown でダウンロード可能
+3. 生徒は復習ノートをいつでも閲覧可能、Markdown でダウンロードも可能
 
 ---
 
@@ -137,7 +137,7 @@ docker compose up --build
 | 変数名 | 説明 |
 |---|---|
 | `DATABASE_URL` | PostgreSQL 接続 URL |
-| `OPENAI_API_KEY` | OpenAI API キー（Whisper・GPT-4o-mini に使用） |
+| `GROQ_API_KEY` | Groq API キー（Llama 3.3による復習ノート生成に使用） |
 
 ---
 
@@ -156,8 +156,8 @@ Re-a-class/
 │   │           ├── chat/               # チャット
 │   │           ├── reactions/          # リアクション
 │   │           ├── surveys/            # アンケート
-│   │           ├── transcribe/         # 音声書き起こし
-│   │           ├── summary/            # AI要約
+│   │           ├── transcribe/         # 書き起こし保存
+│   │           ├── summary/            # AI復習ノート生成
 │   │           └── qr/                 # QRコード生成
 │   └── lib/
 │       └── prisma.ts                   # Prisma Client
