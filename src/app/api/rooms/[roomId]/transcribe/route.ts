@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import OpenAI from 'openai';
 import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
 
 export async function POST(
   request: NextRequest,
@@ -13,35 +11,15 @@ export async function POST(
   const authError = await validateTeacherToken(request, params.roomId);
   if (authError) return authError;
 
-  if (!process.env.OPENAI_API_KEY) {
-    return NextResponse.json({ error: 'OPENAI_API_KEY が設定されていません' }, { status: 500 });
-  }
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
   const room = await prisma.room.findUnique({ where: { id: params.roomId } });
   if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
 
-  const formData = await request.formData();
-  const audioFile = formData.get('audio') as File | null;
-  if (!audioFile) return NextResponse.json({ error: 'No audio file' }, { status: 400 });
-
-  // Whisper に送信
-  let transcription;
-  try {
-    transcription = await client.audio.transcriptions.create({
-      model: 'whisper-1',
-      file: audioFile,
-      language: 'ja',
-    });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error('Whisper transcription error:', message);
-    return NextResponse.json({ error: `Whisper エラー: ${message}` }, { status: 500 });
-  }
+  const { text } = await request.json();
+  if (!text?.trim()) return NextResponse.json({ error: 'No text' }, { status: 400 });
 
   const newTranscript = room.transcript
-    ? `${room.transcript}\n${transcription.text}`
-    : transcription.text;
+    ? `${room.transcript}\n${text.trim()}`
+    : text.trim();
 
   await prisma.room.update({
     where: { id: params.roomId },

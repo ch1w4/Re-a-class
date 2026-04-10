@@ -47,8 +47,11 @@ export default function TeacherRoom() {
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [transcript, setTranscript] = useState('');
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
+  const [interimTranscript, setInterimTranscript] = useState('');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recognitionRef = useRef<any>(null);
+  const recordingRef = useRef(false);
+  const sessionTranscriptRef = useRef('');
 
   // Survey form state
   const [showSurveyForm, setShowSurveyForm] = useState(false);
@@ -108,55 +111,75 @@ export default function TeacherRoom() {
     fetchRoom();
   };
 
-  const startRecording = async () => {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      alert('このブラウザまたは接続環境では録音できません。\nHTTPS または localhost でアクセスしてください。');
+  const startRecording = () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) {
+      alert('このブラウザは音声認識に対応していません。\nChromeを使用してください。');
       return;
     }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg';
-      const mr = new MediaRecorder(stream, { mimeType });
-      chunksRef.current = [];
-      mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-      mr.onstop = async () => {
-        stream.getTracks().forEach((t) => t.stop());
-        const blob = new Blob(chunksRef.current, { type: mimeType });
-        await uploadAudio(blob, mimeType);
-      };
-      mr.start();
-      mediaRecorderRef.current = mr;
-      setRecording(true);
-    } catch (err: unknown) {
-      const name = err instanceof Error ? err.name : '';
-      if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
-        alert('マイクの使用が拒否されました。\nブラウザのアドレスバー横のアイコンからマイクを許可してください。');
-      } else if (name === 'NotFoundError') {
-        alert('マイクが見つかりません。\nマイクが接続されているか確認してください。');
-      } else {
-        alert(`録音を開始できませんでした。\n${err instanceof Error ? err.message : String(err)}`);
+    const recognition = new SR();
+    recognition.lang = 'ja-JP';
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    sessionTranscriptRef.current = '';
+    setInterimTranscript('');
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    recognition.onresult = (event: any) => {
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          sessionTranscriptRef.current += event.results[i][0].transcript;
+        } else {
+          interim += event.results[i][0].transcript;
+        }
       }
-    }
+      setInterimTranscript(interim);
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    recognition.onerror = (event: any) => {
+      if (event.error === 'not-allowed') {
+        alert('マイクの使用が拒否されました。\nブラウザのアドレスバー横のアイコンからマイクを許可してください。');
+        recordingRef.current = false;
+        setRecording(false);
+      }
+    };
+
+    recognition.onend = () => {
+      if (recordingRef.current) recognition.start();
+    };
+
+    recognition.start();
+    recognitionRef.current = recognition;
+    recordingRef.current = true;
+    setRecording(true);
   };
 
-  const stopRecording = () => {
-    mediaRecorderRef.current?.stop();
+  const stopRecording = async () => {
+    recordingRef.current = false;
+    recognitionRef.current?.stop();
     setRecording(false);
+    setInterimTranscript('');
+    const text = sessionTranscriptRef.current.trim();
+    if (text) await saveTranscript(text);
   };
 
-  const uploadAudio = async (blob: Blob, mimeType: string) => {
+  const saveTranscript = async (text: string) => {
     setTranscribing(true);
     try {
-      const ext = mimeType.includes('ogg') ? 'ogg' : 'webm';
-      const file = new File([blob], `audio.${ext}`, { type: mimeType });
-      const form = new FormData();
-      form.append('audio', file);
-      const res = await fetch(`/api/rooms/${roomId}/transcribe`, { method: 'POST', headers: authHeader, body: form });
+      const res = await fetch(`/api/rooms/${roomId}/transcribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader },
+        body: JSON.stringify({ text }),
+      });
       const data = await res.json();
       if (res.ok) {
         setTranscript(data.transcript);
       } else {
-        alert(`書き起こしに失敗しました\n${data.error ?? res.status}`);
+        alert(`書き起こしの保存に失敗しました\n${data.error ?? res.status}`);
       }
     } finally {
       setTranscribing(false);
@@ -404,6 +427,11 @@ export default function TeacherRoom() {
                 書き起こし中...
               </div>
             )}
+            {recording && interimTranscript && (
+              <div className="bg-blue-50 rounded-xl p-3 mb-2 text-xs text-blue-700 leading-relaxed italic">
+                {interimTranscript}
+              </div>
+            )}
             {transcript ? (
               <div>
                 <p className="text-xs font-semibold text-gray-500 mb-1">書き起こし結果</p>
@@ -413,7 +441,7 @@ export default function TeacherRoom() {
                 <p className="text-xs text-gray-400 mt-1">録音を追加すると末尾に追記されます</p>
               </div>
             ) : (
-              <p className="text-xs text-gray-400">録音した音声がWhisperで自動書き起こしされ、要約に使用されます</p>
+              <p className="text-xs text-gray-400">音声をリアルタイムで書き起こします（Chrome推奨・無料）</p>
             )}
           </div>
 
