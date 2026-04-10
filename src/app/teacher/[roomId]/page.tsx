@@ -53,6 +53,8 @@ export default function TeacherRoom() {
   const recordingRef = useRef(false);
   const sessionTranscriptRef = useRef('');
   const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastActivityRef = useRef<number>(0);
 
   // Survey form state
   const [showSurveyForm, setShowSurveyForm] = useState(false);
@@ -122,7 +124,7 @@ export default function TeacherRoom() {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     recognition.onresult = (event: any) => {
-      // 音声を受信したらリスタートタイマーをリセット
+      lastActivityRef.current = Date.now();
       if (restartTimerRef.current) {
         clearTimeout(restartTimerRef.current);
         restartTimerRef.current = null;
@@ -145,12 +147,10 @@ export default function TeacherRoom() {
         recordingRef.current = false;
         setRecording(false);
       }
-      // no-speech などは onend で再起動するので無視
     };
 
     recognition.onend = () => {
       if (!recordingRef.current) return;
-      // 即座に再起動せず少し待ってから再起動（ギャップを最小化）
       restartTimerRef.current = setTimeout(() => {
         if (recordingRef.current) startRecognition();
       }, 100);
@@ -158,6 +158,7 @@ export default function TeacherRoom() {
 
     recognition.start();
     recognitionRef.current = recognition;
+    lastActivityRef.current = Date.now();
   };
 
   const startRecording = () => {
@@ -172,6 +173,15 @@ export default function TeacherRoom() {
     recordingRef.current = true;
     setRecording(true);
     startRecognition();
+
+    // ウォッチドッグ: 5秒間音声受信がなければ強制再起動
+    watchdogRef.current = setInterval(() => {
+      if (!recordingRef.current) return;
+      const silent = Date.now() - lastActivityRef.current > 5000;
+      if (silent) {
+        try { recognitionRef.current?.stop(); } catch { /* ignore */ }
+      }
+    }, 5000);
   };
 
   const stopRecording = async () => {
@@ -179,6 +189,10 @@ export default function TeacherRoom() {
     if (restartTimerRef.current) {
       clearTimeout(restartTimerRef.current);
       restartTimerRef.current = null;
+    }
+    if (watchdogRef.current) {
+      clearInterval(watchdogRef.current);
+      watchdogRef.current = null;
     }
     recognitionRef.current?.stop();
     setRecording(false);
