@@ -19,9 +19,9 @@
 ### 教師側
 - ルーム作成・QR コード発行（生徒はQRを読むだけで参加）・QRコード画像ダウンロード
 - リアクション集計のリアルタイム表示
-- 生徒からの個人チャット受信（匿名ラベル：生徒A, 生徒B…）
+- 生徒からの個人チャット受信（匿名ラベル：生徒A, 生徒B…Z, AA, AB…）
 - アンケート作成・結果表示・締め切り
-- ブラウザ内蔵の音声認識（Web Speech API）でリアルタイム書き起こし（無料・Chrome推奨）
+- 授業音声の録音 → Groq Whisperで書き起こし（無料・1日2時間まで）
 - Groq AI（Llama 3.3）による生徒向け復習ノート生成・Markdownダウンロード
 - 授業終了（終了後は生徒からの入力を全てブロック）
 
@@ -43,7 +43,7 @@
 | バックエンド | Next.js API Routes |
 | データベース | PostgreSQL 16 |
 | ORM | Prisma 5 |
-| 音声書き起こし | Web Speech API（ブラウザ内蔵・無料） |
+| 音声書き起こし | Groq Whisper large-v3（無料・1日2時間まで） |
 | AI 要約 | Groq API / Llama 3.3 70B（無料枠あり） |
 | インフラ | Docker / Docker Compose |
 
@@ -69,6 +69,7 @@
                       ↕
                ┌──────────────┐
                │   Groq API   │
+               │  Whisper     │
                │  Llama 3.3   │
                └──────────────┘
 ```
@@ -94,10 +95,11 @@ cd Re-a-class
 cp .env.example .env
 ```
 
-`.env` を開いて `GROQ_API_KEY` に取得したキーを入力：
+`.env` を開いて各キーを入力：
 ```env
 DATABASE_URL="postgresql://reaclass:reaclass_pass@localhost:5432/reaclass"
 GROQ_API_KEY="gsk_..."
+CRON_SECRET="任意のランダム文字列"
 ```
 
 **3. 起動**
@@ -122,7 +124,8 @@ docker compose up --build
 
 ### 授業中
 - 教師画面でリアクションや質問をリアルタイムで確認
-- 「**録音開始**」でブラウザの音声認識が起動し、リアルタイムで書き起こし（Chrome推奨）
+- 「**録音開始**」で音声を録音（途中で止めて再開も可能）
+- 録音停止後に「**書き起こし開始**」でGroq Whisperが文字起こし
 - 必要に応じてアンケートを作成・投票
 
 ### 授業の終わり
@@ -137,7 +140,8 @@ docker compose up --build
 | 変数名 | 説明 |
 |---|---|
 | `DATABASE_URL` | PostgreSQL 接続 URL |
-| `GROQ_API_KEY` | Groq API キー（Llama 3.3による復習ノート生成に使用） |
+| `GROQ_API_KEY` | Groq API キー（Whisper書き起こし・Llama 3.3復習ノート生成に使用） |
+| `CRON_SECRET` | cronエンドポイントの認証キー |
 
 ---
 
