@@ -227,8 +227,13 @@ export default function TeacherRoom() {
   const generateSummary = async () => {
     setGeneratingSummary(true);
     try {
-      await fetch(`/api/rooms/${roomId}/summary`, { method: 'POST', headers: authHeader });
-      fetchRoom();
+      const res = await fetch(`/api/rooms/${roomId}/summary`, { method: 'POST', headers: authHeader });
+      if (res.ok) {
+        fetchRoom();
+      } else {
+        const data = await res.json();
+        alert(`要約の生成に失敗しました\n${data.error ?? res.status}`);
+      }
     } finally {
       setGeneratingSummary(false);
     }
