@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 export async function POST(
   request: NextRequest,
@@ -12,10 +13,9 @@ export async function POST(
   const authError = await validateTeacherToken(request, params.roomId);
   if (authError) return authError;
 
-  if (!process.env.OPENAI_API_KEY) {
-    return NextResponse.json({ error: 'OPENAI_API_KEY が設定されていません' }, { status: 500 });
+  if (!process.env.GOOGLE_API_KEY) {
+    return NextResponse.json({ error: 'GOOGLE_API_KEY が設定されていません' }, { status: 500 });
   }
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   const room = await prisma.room.findUnique({
     where: { id: params.roomId },
@@ -80,18 +80,21 @@ ${surveySection}
 
 Markdownで出力してください。`;
 
-  const response = await client.chat.completions.create({
-    model: 'gpt-4o-mini',
-    messages: [{ role: 'user', content: prompt }],
-    max_tokens: 1500,
-  });
+  try {
+    const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const result = await model.generateContent(prompt);
+    const summary = result.response.text();
 
-  const summary = response.choices[0].message.content ?? '';
+    await prisma.room.update({
+      where: { id: params.roomId },
+      data: { summary },
+    });
 
-  await prisma.room.update({
-    where: { id: params.roomId },
-    data: { summary },
-  });
-
-  return NextResponse.json({ summary });
+    return NextResponse.json({ summary });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('Gemini error:', message);
+    return NextResponse.json({ error: `Gemini エラー: ${message}` }, { status: 500 });
+  }
 }
