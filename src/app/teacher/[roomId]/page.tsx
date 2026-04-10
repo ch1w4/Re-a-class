@@ -52,6 +52,7 @@ export default function TeacherRoom() {
   const recognitionRef = useRef<any>(null);
   const recordingRef = useRef(false);
   const sessionTranscriptRef = useRef('');
+  const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Survey form state
   const [showSurveyForm, setShowSurveyForm] = useState(false);
@@ -111,23 +112,21 @@ export default function TeacherRoom() {
     fetchRoom();
   };
 
-  const startRecording = () => {
+  const startRecognition = () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) {
-      alert('このブラウザは音声認識に対応していません。\nChromeを使用してください。');
-      return;
-    }
     const recognition = new SR();
     recognition.lang = 'ja-JP';
     recognition.continuous = true;
     recognition.interimResults = true;
 
-    sessionTranscriptRef.current = '';
-    setInterimTranscript('');
-
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     recognition.onresult = (event: any) => {
+      // 音声を受信したらリスタートタイマーをリセット
+      if (restartTimerRef.current) {
+        clearTimeout(restartTimerRef.current);
+        restartTimerRef.current = null;
+      }
       let interim = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
         if (event.results[i].isFinal) {
@@ -146,20 +145,41 @@ export default function TeacherRoom() {
         recordingRef.current = false;
         setRecording(false);
       }
+      // no-speech などは onend で再起動するので無視
     };
 
     recognition.onend = () => {
-      if (recordingRef.current) recognition.start();
+      if (!recordingRef.current) return;
+      // 即座に再起動せず少し待ってから再起動（ギャップを最小化）
+      restartTimerRef.current = setTimeout(() => {
+        if (recordingRef.current) startRecognition();
+      }, 100);
     };
 
     recognition.start();
     recognitionRef.current = recognition;
+  };
+
+  const startRecording = () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) {
+      alert('このブラウザは音声認識に対応していません。\nChromeを使用してください。');
+      return;
+    }
+    sessionTranscriptRef.current = '';
+    setInterimTranscript('');
     recordingRef.current = true;
     setRecording(true);
+    startRecognition();
   };
 
   const stopRecording = async () => {
     recordingRef.current = false;
+    if (restartTimerRef.current) {
+      clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = null;
+    }
     recognitionRef.current?.stop();
     setRecording(false);
     setInterimTranscript('');
