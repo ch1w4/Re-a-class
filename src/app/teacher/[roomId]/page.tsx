@@ -47,14 +47,10 @@ export default function TeacherRoom() {
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [transcript, setTranscript] = useState('');
-  const [interimTranscript, setInterimTranscript] = useState('');
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const recognitionRef = useRef<any>(null);
-  const recordingRef = useRef(false);
-  const sessionTranscriptRef = useRef('');
-  const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const lastActivityRef = useRef<number>(0);
+  const [hasAudio, setHasAudio] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
 
   // Survey form state
   const [showSurveyForm, setShowSurveyForm] = useState(false);
@@ -114,113 +110,61 @@ export default function TeacherRoom() {
     fetchRoom();
   };
 
-  const startRecognition = () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    const recognition = new SR();
-    recognition.lang = 'ja-JP';
-    recognition.continuous = true;
-    recognition.interimResults = true;
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    recognition.onresult = (event: any) => {
-      lastActivityRef.current = Date.now();
-      let interim = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        if (event.results[i].isFinal) {
-          sessionTranscriptRef.current += event.results[i][0].transcript;
-        } else {
-          interim += event.results[i][0].transcript;
-        }
-      }
-      setInterimTranscript(interim);
-    };
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    recognition.onerror = (event: any) => {
-      if (event.error === 'not-allowed') {
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg';
+      const mr = new MediaRecorder(stream, { mimeType });
+      mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+      mr.start(1000);
+      mediaRecorderRef.current = mr;
+      setRecording(true);
+      setHasAudio(false);
+    } catch (err: unknown) {
+      const name = err instanceof Error ? err.name : '';
+      if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
         alert('マイクの使用が拒否されました。\nブラウザのアドレスバー横のアイコンからマイクを許可してください。');
-        recordingRef.current = false;
-        setRecording(false);
+      } else if (name === 'NotFoundError') {
+        alert('マイクが見つかりません。');
+      } else {
+        alert(`録音を開始できませんでした。\n${err instanceof Error ? err.message : String(err)}`);
       }
-    };
-
-    recognition.onend = () => {
-      if (!recordingRef.current) return;
-      // onendが来たら即再起動（proactive restartと競合しないようタイマーをクリア）
-      if (restartTimerRef.current) {
-        clearTimeout(restartTimerRef.current);
-        restartTimerRef.current = null;
-      }
-      setTimeout(() => {
-        if (recordingRef.current) startRecognition();
-      }, 100);
-    };
-
-    recognition.start();
-    recognitionRef.current = recognition;
-    lastActivityRef.current = Date.now();
-
-    // Chromeの強制停止（約60秒）より前に自分から再起動する
-    restartTimerRef.current = setTimeout(() => {
-      if (!recordingRef.current) return;
-      try { recognition.stop(); } catch { /* onend で再起動される */ }
-    }, 25000); // 25秒ごとに再起動
+    }
   };
 
-  const startRecording = () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) {
-      alert('このブラウザは音声認識に対応していません。\nChromeを使用してください。');
-      return;
-    }
-    sessionTranscriptRef.current = '';
-    setInterimTranscript('');
-    recordingRef.current = true;
-    setRecording(true);
-    startRecognition();
-
-    // ウォッチドッグ: 10秒間 onresult がなければ強制 stop → onend で再起動
-    watchdogRef.current = setInterval(() => {
-      if (!recordingRef.current) return;
-      if (Date.now() - lastActivityRef.current > 10000) {
-        lastActivityRef.current = Date.now(); // 連続再起動防止
-        try { recognitionRef.current?.stop(); } catch { /* ignore */ }
-      }
-    }, 10000);
-  };
-
-  const stopRecording = async () => {
-    recordingRef.current = false;
-    if (restartTimerRef.current) {
-      clearTimeout(restartTimerRef.current);
-      restartTimerRef.current = null;
-    }
-    if (watchdogRef.current) {
-      clearInterval(watchdogRef.current);
-      watchdogRef.current = null;
-    }
-    recognitionRef.current?.stop();
+  const stopRecording = () => {
+    if (!mediaRecorderRef.current) return;
+    mediaRecorderRef.current.onstop = () => {
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      setHasAudio(chunksRef.current.length > 0);
+    };
+    mediaRecorderRef.current.stop();
     setRecording(false);
-    setInterimTranscript('');
-    const text = sessionTranscriptRef.current.trim();
-    if (text) await saveTranscript(text);
   };
 
-  const saveTranscript = async (text: string) => {
+  const transcribeAudio = async () => {
+    if (chunksRef.current.length === 0) return;
     setTranscribing(true);
     try {
+      const mimeType = chunksRef.current[0].type || 'audio/webm';
+      const ext = mimeType.includes('ogg') ? 'ogg' : 'webm';
+      const blob = new Blob(chunksRef.current, { type: mimeType });
+      const file = new File([blob], `audio.${ext}`, { type: mimeType });
+      const form = new FormData();
+      form.append('audio', file);
       const res = await fetch(`/api/rooms/${roomId}/transcribe`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeader },
-        body: JSON.stringify({ text }),
+        headers: authHeader,
+        body: form,
       });
       const data = await res.json();
       if (res.ok) {
         setTranscript(data.transcript);
+        chunksRef.current = [];
+        setHasAudio(false);
       } else {
-        alert(`書き起こしの保存に失敗しました\n${data.error ?? res.status}`);
+        alert(`書き起こしに失敗しました\n${data.error ?? res.status}`);
       }
     } finally {
       setTranscribing(false);
@@ -464,7 +408,7 @@ export default function TeacherRoom() {
                   className="flex-1 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl font-semibold text-sm transition disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   <span className="w-3 h-3 rounded-full bg-white inline-block"></span>
-                  録音開始
+                  {hasAudio ? '録音を追加' : '録音開始'}
                 </button>
               ) : (
                 <button
@@ -476,16 +420,25 @@ export default function TeacherRoom() {
                 </button>
               )}
             </div>
-            {transcribing && (
-              <div className="flex items-center gap-2 text-sm text-blue-600 mb-2">
-                <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                書き起こし中...
+            {recording && (
+              <div className="flex items-center gap-2 text-sm text-red-500 mb-2">
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse inline-block"></span>
+                録音中...
               </div>
             )}
-            {recording && interimTranscript && (
-              <div className="bg-blue-50 rounded-xl p-3 mb-2 text-xs text-blue-700 leading-relaxed italic">
-                {interimTranscript}
-              </div>
+            {hasAudio && !recording && (
+              <button
+                onClick={transcribeAudio}
+                disabled={transcribing}
+                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-sm transition disabled:opacity-50 flex items-center justify-center gap-2 mb-3"
+              >
+                {transcribing ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    書き起こし中...
+                  </>
+                ) : '書き起こし開始'}
+              </button>
             )}
             {transcript ? (
               <div>
@@ -493,10 +446,10 @@ export default function TeacherRoom() {
                 <div className="bg-gray-50 rounded-xl p-3 max-h-40 overflow-y-auto text-xs text-gray-700 leading-relaxed">
                   {transcript}
                 </div>
-                <p className="text-xs text-gray-400 mt-1">録音を追加すると末尾に追記されます</p>
+                <p className="text-xs text-gray-400 mt-1">録音を追加して再度書き起こすと末尾に追記されます</p>
               </div>
             ) : (
-              <p className="text-xs text-gray-400">音声をリアルタイムで書き起こします（Chrome推奨・無料）</p>
+              <p className="text-xs text-gray-400">録音停止後に「書き起こし開始」を押すとGroq Whisperで文字起こしされます</p>
             )}
           </div>
 
