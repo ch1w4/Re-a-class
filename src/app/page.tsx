@@ -23,6 +23,7 @@ export default function Home() {
         body: JSON.stringify({ teacherName, roomName }),
       });
       const data = await res.json();
+      localStorage.setItem(`reaclass_teacher_token_${data.id}`, data.teacherToken);
       router.push(`/teacher/${data.id}`);
     } catch {
       setError('ルームの作成に失敗しました');

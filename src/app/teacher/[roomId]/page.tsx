@@ -29,6 +29,8 @@ export default function TeacherRoom() {
   const router = useRouter();
   const roomId = params.roomId as string;
 
+  const [authState, setAuthState] = useState<'checking' | 'valid' | 'denied'>('checking');
+  const [teacherToken, setTeacherToken] = useState('');
   const [room, setRoom] = useState<Room | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState('');
   const [studentUrl, setStudentUrl] = useState('');
@@ -53,6 +55,15 @@ export default function TeacherRoom() {
   const [surveyQuestion, setSurveyQuestion] = useState('');
   const [surveyOptions, setSurveyOptions] = useState(['', '']);
 
+  useEffect(() => {
+    const token = localStorage.getItem(`reaclass_teacher_token_${roomId}`);
+    if (!token) { setAuthState('denied'); return; }
+    fetch(`/api/rooms/${roomId}/auth?token=${encodeURIComponent(token)}`)
+      .then((r) => r.json())
+      .then((d) => { if (d.valid) { setTeacherToken(token); setAuthState('valid'); } else { setAuthState('denied'); } })
+      .catch(() => setAuthState('denied'));
+  }, [roomId]);
+
   const fetchRoom = useCallback(async () => {
     try {
       const res = await fetch(`/api/rooms/${roomId}`);
@@ -76,20 +87,24 @@ export default function TeacherRoom() {
   }, [room]);
 
   useEffect(() => {
+    if (authState !== 'valid') return;
     fetchRoom();
     fetch(`/api/rooms/${roomId}/qr`).then((r) => r.json()).then((d) => {
       setQrDataUrl(d.qr);
       setStudentUrl(d.url);
     }).catch(() => {});
-  }, [roomId, fetchRoom]);
+  }, [roomId, fetchRoom, authState]);
 
   useEffect(() => {
+    if (authState !== 'valid') return;
     const iv = setInterval(fetchRoom, 2000);
     return () => clearInterval(iv);
-  }, [fetchRoom]);
+  }, [fetchRoom, authState]);
+
+  const authHeader = { 'x-teacher-token': teacherToken };
 
   const toggleChat = async () => {
-    await fetch(`/api/rooms/${roomId}/chat/toggle`, { method: 'POST' });
+    await fetch(`/api/rooms/${roomId}/chat/toggle`, { method: 'POST', headers: authHeader });
     fetchRoom();
   };
 
@@ -125,7 +140,7 @@ export default function TeacherRoom() {
       const file = new File([blob], `audio.${ext}`, { type: mimeType });
       const form = new FormData();
       form.append('audio', file);
-      const res = await fetch(`/api/rooms/${roomId}/transcribe`, { method: 'POST', body: form });
+      const res = await fetch(`/api/rooms/${roomId}/transcribe`, { method: 'POST', headers: authHeader, body: form });
       if (res.ok) {
         const data = await res.json();
         setTranscript(data.transcript);
@@ -142,7 +157,7 @@ export default function TeacherRoom() {
     try {
       await fetch(`/api/rooms/${roomId}/notes`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeader },
         body: JSON.stringify({ notes }),
       });
       setNotesSaved(true);
@@ -153,7 +168,7 @@ export default function TeacherRoom() {
   };
 
   const endClass = async () => {
-    await fetch(`/api/rooms/${roomId}`, { method: 'DELETE' });
+    await fetch(`/api/rooms/${roomId}`, { method: 'DELETE', headers: authHeader });
     setEndConfirm(false);
     fetchRoom();
   };
@@ -163,7 +178,7 @@ export default function TeacherRoom() {
     if (!surveyQuestion.trim() || opts.length < 2) return;
     await fetch(`/api/rooms/${roomId}/surveys`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeader },
       body: JSON.stringify({ question: surveyQuestion, options: opts }),
     });
     setSurveyQuestion(''); setSurveyOptions(['', '']); setShowSurveyForm(false);
@@ -171,14 +186,14 @@ export default function TeacherRoom() {
   };
 
   const closeSurvey = async (surveyId: string) => {
-    await fetch(`/api/rooms/${roomId}/surveys/${surveyId}/close`, { method: 'POST' });
+    await fetch(`/api/rooms/${roomId}/surveys/${surveyId}/close`, { method: 'POST', headers: authHeader });
     fetchRoom();
   };
 
   const generateSummary = async () => {
     setGeneratingSummary(true);
     try {
-      await fetch(`/api/rooms/${roomId}/summary`, { method: 'POST' });
+      await fetch(`/api/rooms/${roomId}/summary`, { method: 'POST', headers: authHeader });
       fetchRoom();
     } finally {
       setGeneratingSummary(false);
@@ -199,6 +214,26 @@ export default function TeacherRoom() {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  if (authState === 'checking') return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="text-center">
+        <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+        <p className="text-gray-500">認証中...</p>
+      </div>
+    </div>
+  );
+
+  if (authState === 'denied') return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="text-center">
+        <div className="text-5xl mb-4">🔒</div>
+        <p className="text-red-500 text-xl font-bold mb-2">アクセスできません</p>
+        <p className="text-gray-500 text-sm mb-6">このルームの教師権限がありません</p>
+        <button onClick={() => router.push('/')} className="text-blue-600 hover:underline">トップへ戻る</button>
+      </div>
+    </div>
+  );
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">

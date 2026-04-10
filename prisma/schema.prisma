@@ -8,11 +8,12 @@ datasource db {
 }
 
 model Room {
-  id          String        @id
-  name        String
-  teacherName String
-  createdAt   DateTime      @default(now())
-  endedAt     DateTime?
+  id           String        @id
+  name         String
+  teacherName  String
+  teacherToken String        @default("")
+  createdAt    DateTime      @default(now())
+  endedAt      DateTime?
   chatEnabled  Boolean       @default(false)
   notes        String        @default("")
   transcript   String        @default("")

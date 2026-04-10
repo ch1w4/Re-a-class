@@ -8,6 +8,10 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { roomId: string } }
 ) {
+  const { validateTeacherToken } = await import('@/lib/teacherAuth');
+  const authError = await validateTeacherToken(request, params.roomId);
+  if (authError) return authError;
+
   if (!process.env.OPENAI_API_KEY) {
     return NextResponse.json({ error: 'OPENAI_API_KEY が設定されていません' }, { status: 500 });
   }

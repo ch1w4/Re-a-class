@@ -10,11 +10,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Missing fields' }, { status: 400 });
   }
   const id = uuidv4().replace(/-/g, '').substring(0, 8).toUpperCase();
+  const teacherToken = uuidv4().replace(/-/g, '');
   const room = await prisma.room.create({
-    data: { id, name: roomName, teacherName },
+    data: { id, name: roomName, teacherName, teacherToken },
     include: { messages: true, reactions: true, surveys: { include: { options: true } } },
   });
-  return NextResponse.json(room);
+  return NextResponse.json({ ...room, teacherToken });
 }
 
 export async function GET() {
