@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenAI } from '@google/genai';
+import Groq from 'groq-sdk';
 import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
@@ -13,8 +13,8 @@ export async function POST(
   const authError = await validateTeacherToken(request, params.roomId);
   if (authError) return authError;
 
-  if (!process.env.GOOGLE_API_KEY) {
-    return NextResponse.json({ error: 'GOOGLE_API_KEY が設定されていません' }, { status: 500 });
+  if (!process.env.GROQ_API_KEY) {
+    return NextResponse.json({ error: 'GROQ_API_KEY が設定されていません' }, { status: 500 });
   }
 
   const room = await prisma.room.findUnique({
@@ -81,12 +81,13 @@ ${surveySection}
 Markdownで出力してください。`;
 
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY });
-    const result = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
-      contents: prompt,
+    const client = new Groq({ apiKey: process.env.GROQ_API_KEY });
+    const response = await client.chat.completions.create({
+      model: 'llama-3.3-70b-versatile',
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 2000,
     });
-    const summary = result.text ?? '';
+    const summary = response.choices[0].message.content ?? '';
 
     await prisma.room.update({
       where: { id: params.roomId },
@@ -96,7 +97,7 @@ Markdownで出力してください。`;
     return NextResponse.json({ summary });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error('Gemini error:', message);
-    return NextResponse.json({ error: `Gemini エラー: ${message}` }, { status: 500 });
+    console.error('Groq error:', message);
+    return NextResponse.json({ error: `Groq エラー: ${message}` }, { status: 500 });
   }
 }
