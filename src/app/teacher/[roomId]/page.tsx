@@ -365,7 +365,16 @@ export default function TeacherRoom() {
           <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 text-center">
             <h2 className="text-base font-bold text-gray-700 mb-3">生徒参加用 QRコード</h2>
             {qrDataUrl ? (
-              <img src={qrDataUrl} alt="QR Code" className={`mx-auto mb-3 rounded-xl ${isEnded ? 'opacity-40 grayscale' : ''}`} width={200} height={200} />
+              <>
+                <img src={qrDataUrl} alt="QR Code" className={`mx-auto mb-3 rounded-xl ${isEnded ? 'opacity-40 grayscale' : ''}`} width={200} height={200} />
+                <a
+                  href={qrDataUrl}
+                  download={`${room.name}_qr.png`}
+                  className="w-full mb-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-xl px-3 py-2 text-sm font-semibold transition flex items-center justify-center gap-2"
+                >
+                  QRコードをダウンロード
+                </a>
+              </>
             ) : (
               <div className="w-48 h-48 bg-gray-100 rounded-xl mx-auto mb-3 flex items-center justify-center">
                 <span className="text-gray-400 text-sm">生成中...</span>
