@@ -572,10 +572,19 @@ export default function TeacherRoom() {
                 (() => {
                   const labelMap: Record<string, string> = {};
                   const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+                  const toLabel = (n: number): string => {
+                    let s = '';
+                    let i = n;
+                    do {
+                      s = letters[i % 26] + s;
+                      i = Math.floor(i / 26) - 1;
+                    } while (i >= 0);
+                    return s;
+                  };
                   let idx = 0;
                   room.messages.forEach((m) => {
                     if (!labelMap[m.studentId]) {
-                      labelMap[m.studentId] = `生徒${letters[idx % 26]}`;
+                      labelMap[m.studentId] = `生徒${toLabel(idx)}`;
                       idx++;
                     }
                   });
