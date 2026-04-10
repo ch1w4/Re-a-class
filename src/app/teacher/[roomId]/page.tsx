@@ -125,10 +125,6 @@ export default function TeacherRoom() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     recognition.onresult = (event: any) => {
       lastActivityRef.current = Date.now();
-      if (restartTimerRef.current) {
-        clearTimeout(restartTimerRef.current);
-        restartTimerRef.current = null;
-      }
       let interim = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
         if (event.results[i].isFinal) {
@@ -151,7 +147,12 @@ export default function TeacherRoom() {
 
     recognition.onend = () => {
       if (!recordingRef.current) return;
-      restartTimerRef.current = setTimeout(() => {
+      // onendが来たら即再起動（proactive restartと競合しないようタイマーをクリア）
+      if (restartTimerRef.current) {
+        clearTimeout(restartTimerRef.current);
+        restartTimerRef.current = null;
+      }
+      setTimeout(() => {
         if (recordingRef.current) startRecognition();
       }, 100);
     };
@@ -159,6 +160,12 @@ export default function TeacherRoom() {
     recognition.start();
     recognitionRef.current = recognition;
     lastActivityRef.current = Date.now();
+
+    // Chromeの強制停止（約60秒）より前に自分から再起動する
+    restartTimerRef.current = setTimeout(() => {
+      if (!recordingRef.current) return;
+      try { recognition.stop(); } catch { /* onend で再起動される */ }
+    }, 25000); // 25秒ごとに再起動
   };
 
   const startRecording = () => {
@@ -174,14 +181,14 @@ export default function TeacherRoom() {
     setRecording(true);
     startRecognition();
 
-    // ウォッチドッグ: 5秒間音声受信がなければ強制再起動
+    // ウォッチドッグ: 10秒間 onresult がなければ強制 stop → onend で再起動
     watchdogRef.current = setInterval(() => {
       if (!recordingRef.current) return;
-      const silent = Date.now() - lastActivityRef.current > 5000;
-      if (silent) {
+      if (Date.now() - lastActivityRef.current > 10000) {
+        lastActivityRef.current = Date.now(); // 連続再起動防止
         try { recognitionRef.current?.stop(); } catch { /* ignore */ }
       }
-    }, 5000);
+    }, 10000);
   };
 
   const stopRecording = async () => {
