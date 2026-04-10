@@ -9,15 +9,24 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const fiveHoursAgo = new Date(Date.now() - 5 * 60 * 60 * 1000);
+  const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-  const result = await prisma.room.updateMany({
+  // 2時間以上経過したアクティブなルームを自動終了
+  const closed = await prisma.room.updateMany({
     where: {
       endedAt: null,
-      createdAt: { lt: fiveHoursAgo },
+      createdAt: { lt: twoHoursAgo },
     },
     data: { endedAt: new Date() },
   });
 
-  return NextResponse.json({ closed: result.count });
+  // 終了から1週間以上経過したルームを削除
+  const deleted = await prisma.room.deleteMany({
+    where: {
+      endedAt: { lt: oneWeekAgo },
+    },
+  });
+
+  return NextResponse.json({ closed: closed.count, deleted: deleted.count });
 }
