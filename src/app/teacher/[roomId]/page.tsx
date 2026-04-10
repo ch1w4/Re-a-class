@@ -109,6 +109,10 @@ export default function TeacherRoom() {
   };
 
   const startRecording = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      alert('このブラウザまたは接続環境では録音できません。\nHTTPS または localhost でアクセスしてください。');
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg';
@@ -123,8 +127,15 @@ export default function TeacherRoom() {
       mr.start();
       mediaRecorderRef.current = mr;
       setRecording(true);
-    } catch {
-      alert('マイクへのアクセスが拒否されました');
+    } catch (err: unknown) {
+      const name = err instanceof Error ? err.name : '';
+      if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+        alert('マイクの使用が拒否されました。\nブラウザのアドレスバー横のアイコンからマイクを許可してください。');
+      } else if (name === 'NotFoundError') {
+        alert('マイクが見つかりません。\nマイクが接続されているか確認してください。');
+      } else {
+        alert(`録音を開始できませんでした。\n${err instanceof Error ? err.message : String(err)}`);
+      }
     }
   };
 
@@ -141,11 +152,11 @@ export default function TeacherRoom() {
       const form = new FormData();
       form.append('audio', file);
       const res = await fetch(`/api/rooms/${roomId}/transcribe`, { method: 'POST', headers: authHeader, body: form });
+      const data = await res.json();
       if (res.ok) {
-        const data = await res.json();
         setTranscript(data.transcript);
       } else {
-        alert('書き起こしに失敗しました');
+        alert(`書き起こしに失敗しました\n${data.error ?? res.status}`);
       }
     } finally {
       setTranscribing(false);

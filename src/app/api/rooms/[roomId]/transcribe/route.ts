@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 export async function POST(
   request: NextRequest,
@@ -25,11 +26,18 @@ export async function POST(
   if (!audioFile) return NextResponse.json({ error: 'No audio file' }, { status: 400 });
 
   // Whisper に送信
-  const transcription = await client.audio.transcriptions.create({
-    model: 'whisper-1',
-    file: audioFile,
-    language: 'ja',
-  });
+  let transcription;
+  try {
+    transcription = await client.audio.transcriptions.create({
+      model: 'whisper-1',
+      file: audioFile,
+      language: 'ja',
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('Whisper transcription error:', message);
+    return NextResponse.json({ error: `Whisper エラー: ${message}` }, { status: 500 });
+  }
 
   const newTranscript = room.transcript
     ? `${room.transcript}\n${transcription.text}`
