@@ -1,3 +1,7 @@
+// 生徒→教師チャット送信 API
+// POST /api/rooms/[roomId]/chat
+// 生徒が匿名でメッセージを送る。チャットが開放中かつ授業が終了していない場合のみ受け付ける。
+// studentId はフロントエンドで生成したランダムIDで、他の生徒には見えない。
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 

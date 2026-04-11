@@ -1,9 +1,13 @@
+// ルーム詳細取得・授業終了 API
+// GET    /api/rooms/[roomId] → ルームの全データ（チャット・リアクション・アンケート）を返す
+// DELETE /api/rooms/[roomId] → 授業を終了（endedAt をセット）。教師トークン必須。
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { validateTeacherToken } from '@/lib/teacherAuth';
 
 export const dynamic = 'force-dynamic';
 
+// 関連データを全て含めて取得するための共通オプション
 const includeAll = {
   messages: { orderBy: { timestamp: 'asc' as const } },
   reactions: { orderBy: { timestamp: 'asc' as const } },
@@ -19,11 +23,11 @@ export async function GET(
     include: includeAll,
   });
   if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+  // teacherToken は外部に公開しない
   const { teacherToken: _t, ...roomData } = room;
   return NextResponse.json(roomData);
 }
 
-/** 授業終了 */
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { roomId: string } }

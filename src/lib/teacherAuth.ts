@@ -1,7 +1,10 @@
+// 教師専用エンドポイントの認証ヘルパー。
+// リクエストヘッダー「x-teacher-token」を検証し、
+// 一致しない場合は 401 レスポンスを返す。
+// 成功時は null を返すので、呼び出し元で if (authError) return authError; と使う。
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from './prisma';
 
-/** リクエストヘッダー x-teacher-token を検証する。失敗時は NextResponse を返す。成功時は null。 */
 export async function validateTeacherToken(
   request: NextRequest,
   roomId: string

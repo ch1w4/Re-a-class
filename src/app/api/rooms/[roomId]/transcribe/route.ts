@@ -1,8 +1,14 @@
+// 音声書き起こし API
+// POST /api/rooms/[roomId]/transcribe
+// 録音した音声ファイル（webm/ogg）を受け取り、Groq Whisper large-v3 で日本語に書き起こす。
+// 書き起こし結果は既存の transcript に改行区切りで追記される（複数回録音に対応）。
+// 教師トークン必須。無料枠: 1日あたり2時間分の音声まで。
 import { NextRequest, NextResponse } from 'next/server';
 import Groq from 'groq-sdk';
 import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
+// 長い音声ファイルに対応するためタイムアウトを60秒に設定
 export const maxDuration = 60;
 
 export async function POST(
@@ -20,6 +26,7 @@ export async function POST(
   const room = await prisma.room.findUnique({ where: { id: params.roomId } });
   if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
 
+  // FormDataから音声ファイルを取得
   const formData = await request.formData();
   const audioFile = formData.get('audio') as File | null;
   if (!audioFile) return NextResponse.json({ error: 'No audio file' }, { status: 400 });
@@ -39,7 +46,9 @@ export async function POST(
     return NextResponse.json({ error: `書き起こしエラー: ${message}` }, { status: 500 });
   }
 
+  // response_format: 'text' の場合は文字列、それ以外はオブジェクトで返ることがある
   const text = typeof transcription === 'string' ? transcription : (transcription as { text: string }).text;
+  // 既存の書き起こしに追記（授業を分割して録音した場合に対応）
   const newTranscript = room.transcript ? `${room.transcript}\n${text.trim()}` : text.trim();
 
   await prisma.room.update({

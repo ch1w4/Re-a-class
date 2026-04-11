@@ -1,8 +1,15 @@
+// 授業要約（復習ノート）生成 API
+// POST /api/rooms/[roomId]/summary
+// 書き起こし・リアクション集計・アンケート結果をもとに、
+// Groq Llama 3.3 70B で生徒向けの復習ノートを生成してDBに保存する。
+// 構成: ポイント・詳細説明・重要用語・確認問題（・アンケートまとめ）
+// 教師トークン必須。無料枠: 1日14,400リクエスト / 500,000トークン。
 import { NextRequest, NextResponse } from 'next/server';
 import Groq from 'groq-sdk';
 import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
+// LLMの応答生成に時間がかかるためタイムアウトを60秒に設定
 export const maxDuration = 60;
 
 export async function POST(
@@ -17,6 +24,7 @@ export async function POST(
     return NextResponse.json({ error: 'GROQ_API_KEY が設定されていません' }, { status: 500 });
   }
 
+  // リアクションとアンケートも含めて取得
   const room = await prisma.room.findUnique({
     where: { id: params.roomId },
     include: {
@@ -26,6 +34,7 @@ export async function POST(
   });
   if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
 
+  // リアクション種別ごとの件数を集計
   const counts = room.reactions.reduce<Record<string, number>>((acc, r) => {
     acc[r.type] = (acc[r.type] ?? 0) + 1;
     return acc;
@@ -40,6 +49,7 @@ export async function POST(
     `合計: ${room.reactions.length}件`,
   ].join('\n');
 
+  // アンケート結果を文字列に整形
   const surveySection = room.surveys.length > 0
     ? room.surveys.map((s) => {
         const total = s.options.reduce((sum, o) => sum + o.votes, 0);
@@ -53,6 +63,7 @@ export async function POST(
 
   const transcriptSection = room.transcript.trim() || '（音声書き起こしなし）';
 
+  // 生徒向け復習ノートの生成プロンプト
   const prompt = `あなたは授業のアシスタントです。以下の授業データをもとに、生徒が授業後に見返すための復習ノートを日本語で作成してください。
 
 ## 授業情報

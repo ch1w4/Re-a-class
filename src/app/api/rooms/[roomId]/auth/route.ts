@@ -1,3 +1,7 @@
+// 教師トークン検証 API
+// GET /api/rooms/[roomId]/auth?token=xxx
+// ページロード時に localStorage のトークンが有効かどうかを確認するために使う。
+// valid: true/false を返すだけのシンプルなエンドポイント。
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 

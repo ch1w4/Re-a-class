@@ -1,3 +1,6 @@
+// アンケート作成 API
+// POST /api/rooms/[roomId]/surveys
+// 教師がアンケートを作成する。質問文と2つ以上の選択肢が必要。教師トークン必須。
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { validateTeacherToken } from '@/lib/teacherAuth';
@@ -20,6 +23,7 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid survey data' }, { status: 400 });
   }
 
+  // アンケートと選択肢を同時に作成する
   const survey = await prisma.survey.create({
     data: {
       question: question.trim(),

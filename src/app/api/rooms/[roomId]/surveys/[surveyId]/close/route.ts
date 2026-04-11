@@ -1,3 +1,7 @@
+// アンケート締め切り API
+// POST /api/rooms/[roomId]/surveys/[surveyId]/close
+// 教師がアンケートを締め切る（isOpen を false にする）。教師トークン必須。
+// 締め切り後は生徒から投票できなくなるが、結果は引き続き表示される。
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { validateTeacherToken } from '@/lib/teacherAuth';

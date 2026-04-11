@@ -1,3 +1,8 @@
+// アンケート回答 API
+// POST /api/rooms/[roomId]/surveys/[surveyId]/answer
+// 生徒がアンケートの選択肢に投票する。
+// アンケートが締め切られている・授業が終了している場合は受け付けない。
+// 二重投票防止はフロントエンド側のstateで管理している（サーバー側には防止機構なし）。
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
@@ -19,6 +24,7 @@ export async function POST(
 
   const { optionId } = await request.json();
 
+  // 選択肢の票数を1増やす
   await prisma.surveyOption.update({
     where: { id: optionId },
     data: { votes: { increment: 1 } },

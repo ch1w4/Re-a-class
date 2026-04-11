@@ -1,10 +1,16 @@
+// 教師画面
+// 授業ルームの管理画面。リアクション集計・チャット・アンケート・録音・AI要約を担う。
+// 2秒ごとにポーリングしてリアルタイム更新を実現している。
+// ページロード時に localStorage のトークンを確認し、教師権限を検証する。
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 
+// リアクションの種別定義
 type ReactionType = 'understood' | 'confused' | 'question' | 'slow' | 'fast';
 
+// 型定義
 interface ChatMessage { id: string; content: string; timestamp: string; studentId: string }
 interface Reaction { id: string; type: ReactionType; timestamp: string }
 interface SurveyOption { id: string; text: string; votes: number }
@@ -15,6 +21,7 @@ interface Room {
   surveys: Survey[]; notes: string; transcript: string; summary: string;
 }
 
+// リアクション種別ごとの表示情報（ラベル・絵文字・グラフの色）
 const REACTION_INFO: Record<ReactionType, { label: string; emoji: string; bar: string }> = {
   understood: { label: '理解した',      emoji: '👍', bar: 'bg-green-400' },
   confused:   { label: 'わからない',    emoji: '🤔', bar: 'bg-red-400' },
@@ -29,6 +36,7 @@ export default function TeacherRoom() {
   const router = useRouter();
   const roomId = params.roomId as string;
 
+  // 認証状態: checking（検証中）→ valid（許可）or denied（拒否）
   const [authState, setAuthState] = useState<'checking' | 'valid' | 'denied'>('checking');
   const [teacherToken, setTeacherToken] = useState('');
   const [room, setRoom] = useState<Room | null>(null);
@@ -43,16 +51,20 @@ export default function TeacherRoom() {
   const [notesSaving, setNotesSaving] = useState(false);
   const [notesSaved, setNotesSaved] = useState(false);
 
-  // 録音
-  const [recording, setRecording] = useState(false);
-  const [transcribing, setTranscribing] = useState(false);
-  const [transcript, setTranscript] = useState('');
-  const [hasAudio, setHasAudio] = useState(false);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const streamRef = useRef<MediaStream | null>(null);
+  // 録音関連のstate
+  const [recording, setRecording] = useState(false);       // 録音中かどうか
+  const [transcribing, setTranscribing] = useState(false); // 書き起こし処理中かどうか
+  const [transcript, setTranscript] = useState('');        // 書き起こし済みテキスト
+  const [hasAudio, setHasAudio] = useState(false);         // 未送信の録音データが存在するか
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null); // MediaRecorderインスタンス
+  const chunksRef = useRef<Blob[]>([]);                        // 録音データのチャンク
+  const streamRef = useRef<MediaStream | null>(null);          // マイクのMediaStream
 
-  // Survey form state
+  // ベータテスト用: 音声ファイルアップロードのstate
+  const [uploadingFile, setUploadingFile] = useState(false); // ファイル送信中かどうか
+  const fileInputRef = useRef<HTMLInputElement>(null);        // ファイル選択inputへの参照
+
+  // アンケート作成フォームのstate
   const [showSurveyForm, setShowSurveyForm] = useState(false);
   const [surveyQuestion, setSurveyQuestion] = useState('');
   const [surveyOptions, setSurveyOptions] = useState(['', '']);
@@ -170,6 +182,31 @@ export default function TeacherRoom() {
       }
     } finally {
       setTranscribing(false);
+    }
+  };
+
+  // ベータテスト用: 既存の音声ファイルをアップロードして書き起こす
+  // mp3/wav/m4a/webm/ogg など主要フォーマットに対応
+  const uploadAudioFile = async (file: File) => {
+    setUploadingFile(true);
+    try {
+      const form = new FormData();
+      form.append('audio', file);
+      const res = await fetch(`/api/rooms/${roomId}/transcribe`, {
+        method: 'POST',
+        headers: authHeader,
+        body: form,
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setTranscript(data.transcript);
+      } else {
+        alert(`書き起こしに失敗しました\n${data.error ?? res.status}`);
+      }
+    } finally {
+      setUploadingFile(false);
+      // ファイル選択をリセットして同じファイルを再選択できるようにする
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -442,8 +479,35 @@ export default function TeacherRoom() {
                 ) : '書き起こし開始'}
               </button>
             )}
+            {/* ベータテスト用: 音声ファイルを直接アップロードして書き起こす */}
+            <div className="border-t border-gray-100 mt-3 pt-3">
+              <p className="text-xs text-gray-400 mb-2">ファイルから書き起こし（ベータ）</p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="audio/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) uploadAudioFile(file);
+                }}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingFile || transcribing}
+                className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl text-xs font-semibold transition disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {uploadingFile ? (
+                  <>
+                    <div className="w-3 h-3 border-2 border-gray-500 border-t-transparent rounded-full animate-spin"></div>
+                    アップロード中...
+                  </>
+                ) : '音声ファイルを選択'}
+              </button>
+              <p className="text-xs text-gray-300 mt-1">mp3 / wav / m4a / webm など対応</p>
+            </div>
             {transcript ? (
-              <div>
+              <div className="mt-3">
                 <p className="text-xs font-semibold text-gray-500 mb-1">書き起こし結果</p>
                 <div className="bg-gray-50 rounded-xl p-3 max-h-40 overflow-y-auto text-xs text-gray-700 leading-relaxed">
                   {transcript}
@@ -451,7 +515,7 @@ export default function TeacherRoom() {
                 <p className="text-xs text-gray-400 mt-1">録音を追加して再度書き起こすと末尾に追記されます</p>
               </div>
             ) : (
-              <p className="text-xs text-gray-400">録音停止後に「書き起こし開始」を押すとGroq Whisperで文字起こしされます</p>
+              <p className="text-xs text-gray-400 mt-2">録音停止後に「書き起こし開始」を押すとGroq Whisperで文字起こしされます</p>
             )}
           </div>
 

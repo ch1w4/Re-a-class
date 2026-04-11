@@ -1,3 +1,7 @@
+// 教師メモ保存 API
+// PATCH /api/rooms/[roomId]/notes
+// 教師が授業中に取ったメモをDBに保存する。教師トークン必須。
+// メモは要約生成には使われず、教師画面にのみ表示される。
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { validateTeacherToken } from '@/lib/teacherAuth';
