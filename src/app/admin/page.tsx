@@ -4,7 +4,7 @@
 // 各ルームに対して「授業終了」「削除」操作が可能。
 // 認証情報: username=admin / password=pass（環境変数 ADMIN_PASSWORD で変更可）
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 
 interface Room {
   id: string;
@@ -18,6 +18,25 @@ interface Room {
   reactionCount: number;
   surveyCount: number;
 }
+
+type SortKey =
+  | 'createdAt_desc'
+  | 'createdAt_asc'
+  | 'autoDelete_asc'
+  | 'autoEnd_asc'
+  | 'reaction_desc'
+  | 'message_desc'
+  | 'survey_desc';
+
+const SORT_LABELS: Record<SortKey, string> = {
+  createdAt_desc: '作成日時（新しい順）',
+  createdAt_asc:  '作成日時（古い順）',
+  autoDelete_asc: '自動削除まで（近い順）',
+  autoEnd_asc:    '自動終了まで（近い順）',
+  reaction_desc:  'リアクション数（多い順）',
+  message_desc:   'チャット数（多い順）',
+  survey_desc:    'アンケート数（多い順）',
+};
 
 // 残り時間を「X日Y時間Z分」形式の文字列に変換
 function formatRemaining(ms: number): string {
@@ -41,6 +60,8 @@ export default function AdminPage() {
   const [error, setError] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [expandedSummary, setExpandedSummary] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortKey, setSortKey] = useState<SortKey>('createdAt_desc');
   // カウントダウン表示用に1分ごとに再レンダリング
   const [, setTick] = useState(0);
   const scrollRef = useRef<number>(0);
@@ -173,6 +194,55 @@ export default function AdminPage() {
     return ms > 0 ? `${formatRemaining(ms)}に自動削除` : '間もなく自動削除';
   };
 
+  // 検索＋並べ替えを適用したルーム一覧
+  const filteredRooms = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const filtered = q
+      ? rooms.filter(
+          (r) =>
+            r.name.toLowerCase().includes(q) ||
+            r.teacherName.toLowerCase().includes(q)
+        )
+      : rooms;
+
+    return [...filtered].sort((a, b) => {
+      switch (sortKey) {
+        case 'createdAt_desc':
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        case 'createdAt_asc':
+          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        case 'autoDelete_asc': {
+          // 終了済みルームを先に（削除が近い順）、進行中は末尾
+          const msA = a.endedAt
+            ? new Date(a.endedAt).getTime() + 7 * 24 * 60 * 60 * 1000
+            : Infinity;
+          const msB = b.endedAt
+            ? new Date(b.endedAt).getTime() + 7 * 24 * 60 * 60 * 1000
+            : Infinity;
+          return msA - msB;
+        }
+        case 'autoEnd_asc': {
+          // 進行中ルームを先に（終了が近い順）、終了済みは末尾
+          const msA = a.endedAt
+            ? Infinity
+            : new Date(a.createdAt).getTime() + 2 * 60 * 60 * 1000;
+          const msB = b.endedAt
+            ? Infinity
+            : new Date(b.createdAt).getTime() + 2 * 60 * 60 * 1000;
+          return msA - msB;
+        }
+        case 'reaction_desc':
+          return b.reactionCount - a.reactionCount;
+        case 'message_desc':
+          return b.messageCount - a.messageCount;
+        case 'survey_desc':
+          return b.surveyCount - a.surveyCount;
+        default:
+          return 0;
+      }
+    });
+  }, [rooms, searchQuery, sortKey]);
+
   // ログイン画面
   if (!loggedIn) {
     return (
@@ -269,13 +339,64 @@ export default function AdminPage() {
           </div>
         )}
 
+        {/* 検索・並べ替えツールバー */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-4 py-3 mb-6 flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+          {/* 検索ボックス */}
+          <div className="relative flex-1">
+            <svg
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"
+              fill="none" stroke="currentColor" viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+            </svg>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="授業名・教師名で検索..."
+              className="w-full pl-9 pr-8 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          {/* 並べ替えセレクト */}
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-xs text-gray-500 whitespace-nowrap">並べ替え:</span>
+            <select
+              value={sortKey}
+              onChange={(e) => setSortKey(e.target.value as SortKey)}
+              className="text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            >
+              {(Object.keys(SORT_LABELS) as SortKey[]).map((k) => (
+                <option key={k} value={k}>{SORT_LABELS[k]}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* 件数表示 */}
+          <span className="text-xs text-gray-400 whitespace-nowrap shrink-0">
+            {filteredRooms.length} / {rooms.length} 件
+          </span>
+        </div>
+
         {rooms.length === 0 && !error && (
           <p className="text-center text-gray-400 py-8">ルームがありません</p>
+        )}
+        {rooms.length > 0 && filteredRooms.length === 0 && (
+          <p className="text-center text-gray-400 py-8">「{searchQuery}」に一致するルームがありません</p>
         )}
 
         {/* ルーム一覧 */}
         <div className="space-y-4">
-          {rooms.map((room) => {
+          {filteredRooms.map((room) => {
             const endNote = autoEndRemaining(room);
             const deleteNote = autoDeleteRemaining(room);
             const summaryOpen = expandedSummary.has(room.id);
