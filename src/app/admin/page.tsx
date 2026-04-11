@@ -4,7 +4,7 @@
 // 各ルームに対して「授業終了」「削除」操作が可能。
 // 認証情報: username=admin / password=pass（環境変数 ADMIN_PASSWORD で変更可）
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 interface Room {
   id: string;
@@ -19,28 +19,49 @@ interface Room {
   surveyCount: number;
 }
 
+// 残り時間を「X日Y時間Z分」形式の文字列に変換
+function formatRemaining(ms: number): string {
+  if (ms <= 0) return '間もなく';
+  const totalMin = Math.floor(ms / 60000);
+  const days = Math.floor(totalMin / 1440);
+  const hours = Math.floor((totalMin % 1440) / 60);
+  const mins = totalMin % 60;
+  if (days > 0) return `${days}日${hours > 0 ? `${hours}時間` : ''}後`;
+  if (hours > 0) return `${hours}時間${mins > 0 ? `${mins}分` : ''}後`;
+  return `${mins}分後`;
+}
+
 export default function AdminPage() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [rooms, setRooms] = useState<Room[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [expandedSummary, setExpandedSummary] = useState<Set<string>>(new Set());
+  // カウントダウン表示用に1分ごとに再レンダリング
+  const [, setTick] = useState(0);
+  const scrollRef = useRef<number>(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => setTick((t) => t + 1), 60000);
+    return () => clearInterval(timer);
+  }, []);
 
   // ページ読み込み時にセッションストレージから認証状態を復元
   useEffect(() => {
     const saved = sessionStorage.getItem('adminPassword');
-    if (saved) {
-      setLoggedIn(true);
-    }
+    if (saved) setLoggedIn(true);
   }, []);
 
-  const fetchRooms = useCallback(async () => {
+  const fetchRooms = useCallback(async (silent = false) => {
     const pw = sessionStorage.getItem('adminPassword') ?? '';
-    setLoading(true);
+    if (!silent) setRefreshing(true);
     setError('');
+    // スクロール位置を保存してから更新
+    scrollRef.current = window.scrollY;
     try {
       const res = await fetch('/api/admin/rooms', {
         headers: { 'x-admin-password': pw },
@@ -51,10 +72,12 @@ export default function AdminPage() {
       }
       const data = await res.json();
       setRooms(data);
+      // スクロール位置を復元
+      requestAnimationFrame(() => window.scrollTo({ top: scrollRef.current }));
     } catch {
       setError('通信エラーが発生しました');
     } finally {
-      setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -69,7 +92,6 @@ export default function AdminPage() {
       setLoginError('ユーザー名またはパスワードが違います');
       return;
     }
-    // サーバーにパスワードを確認
     const res = await fetch('/api/admin/rooms', {
       headers: { 'x-admin-password': password },
     });
@@ -96,7 +118,10 @@ export default function AdminPage() {
       headers: { 'x-admin-password': pw },
     });
     if (res.ok) {
-      fetchRooms();
+      // ローカルの state だけ即時更新してスクロールを維持
+      setRooms((prev) =>
+        prev.map((r) => (r.id === roomId ? { ...r, endedAt: new Date().toISOString() } : r))
+      );
     } else {
       const data = await res.json();
       alert(`エラー: ${data.error}`);
@@ -111,11 +136,21 @@ export default function AdminPage() {
     });
     if (res.ok) {
       setConfirmDelete(null);
-      fetchRooms();
+      // ローカルの state から該当ルームを削除（スクロール位置維持）
+      setRooms((prev) => prev.filter((r) => r.id !== roomId));
     } else {
       const data = await res.json();
       alert(`エラー: ${data.error}`);
     }
+  };
+
+  const toggleSummary = (roomId: string) => {
+    setExpandedSummary((prev) => {
+      const next = new Set(prev);
+      if (next.has(roomId)) next.delete(roomId);
+      else next.add(roomId);
+      return next;
+    });
   };
 
   const formatDate = (iso: string) =>
@@ -123,6 +158,20 @@ export default function AdminPage() {
       year: 'numeric', month: '2-digit', day: '2-digit',
       hour: '2-digit', minute: '2-digit',
     });
+
+  // 自動終了まで: createdAt + 2時間
+  const autoEndRemaining = (room: Room): string | null => {
+    if (room.endedAt) return null;
+    const ms = new Date(room.createdAt).getTime() + 2 * 60 * 60 * 1000 - Date.now();
+    return ms > 0 ? `${formatRemaining(ms)}に自動終了` : '間もなく自動終了';
+  };
+
+  // 自動削除まで: endedAt + 7日
+  const autoDeleteRemaining = (room: Room): string | null => {
+    if (!room.endedAt) return null;
+    const ms = new Date(room.endedAt).getTime() + 7 * 24 * 60 * 60 * 1000 - Date.now();
+    return ms > 0 ? `${formatRemaining(ms)}に自動削除` : '間もなく自動削除';
+  };
 
   // ログイン画面
   if (!loggedIn) {
@@ -155,9 +204,7 @@ export default function AdminPage() {
                 required
               />
             </div>
-            {loginError && (
-              <p className="text-red-600 text-sm">{loginError}</p>
-            )}
+            {loginError && <p className="text-red-600 text-sm">{loginError}</p>}
             <button
               type="submit"
               className="w-full bg-blue-600 text-white rounded-lg py-2 font-semibold hover:bg-blue-700 transition"
@@ -174,15 +221,16 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen bg-gray-100">
       {/* ヘッダー */}
-      <header className="bg-white shadow-sm">
+      <header className="bg-white shadow-sm sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
           <h1 className="text-xl font-bold text-gray-800">Re:a Class 管理者パネル</h1>
           <div className="flex items-center gap-3">
             <button
-              onClick={fetchRooms}
-              className="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition"
+              onClick={() => fetchRooms()}
+              disabled={refreshing}
+              className="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition disabled:opacity-50"
             >
-              更新
+              {refreshing ? '更新中...' : '更新'}
             </button>
             <button
               onClick={handleLogout}
@@ -215,88 +263,141 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {/* エラー・ローディング */}
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 mb-6">
             {error}
           </div>
         )}
-        {loading && (
-          <p className="text-center text-gray-500 py-8">読み込み中...</p>
-        )}
 
-        {/* ルーム一覧 */}
-        {!loading && rooms.length === 0 && !error && (
+        {rooms.length === 0 && !error && (
           <p className="text-center text-gray-400 py-8">ルームがありません</p>
         )}
 
-        {!loading && rooms.length > 0 && (
-          <div className="space-y-4">
-            {rooms.map((room) => (
+        {/* ルーム一覧 */}
+        <div className="space-y-4">
+          {rooms.map((room) => {
+            const endNote = autoEndRemaining(room);
+            const deleteNote = autoDeleteRemaining(room);
+            const summaryOpen = expandedSummary.has(room.id);
+
+            return (
               <div
                 key={room.id}
-                className="bg-white rounded-xl shadow-sm p-5 border border-gray-100"
+                className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden"
               >
-                <div className="flex items-start justify-between gap-4">
-                  {/* ルーム情報 */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-mono text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
-                        {room.id}
-                      </span>
-                      <span
-                        className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                          room.endedAt
-                            ? 'bg-gray-100 text-gray-500'
-                            : 'bg-green-100 text-green-700'
-                        }`}
-                      >
-                        {room.endedAt ? '終了済み' : '進行中'}
-                      </span>
-                      {room.summary && (
-                        <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
-                          要約あり
+                <div className="p-5">
+                  <div className="flex items-start justify-between gap-4">
+                    {/* ルーム情報 */}
+                    <div className="flex-1 min-w-0">
+                      {/* バッジ行 */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
+                          {room.id}
                         </span>
-                      )}
-                    </div>
-                    <h2 className="mt-2 text-lg font-semibold text-gray-800 truncate">
-                      {room.name}
-                    </h2>
-                    <p className="text-sm text-gray-500">担当: {room.teacherName}</p>
-                    <div className="mt-2 flex flex-wrap gap-4 text-xs text-gray-400">
-                      <span>作成: {formatDate(room.createdAt)}</span>
-                      {room.endedAt && <span>終了: {formatDate(room.endedAt)}</span>}
-                      <span>チャット {room.messageCount}件</span>
-                      <span>リアクション {room.reactionCount}件</span>
-                      <span>アンケート {room.surveyCount}件</span>
-                      {room.transcript && (
-                        <span>書き起こし {room.transcript.length}文字</span>
-                      )}
-                    </div>
-                  </div>
+                        <span
+                          className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                            room.endedAt
+                              ? 'bg-gray-100 text-gray-500'
+                              : 'bg-green-100 text-green-700'
+                          }`}
+                        >
+                          {room.endedAt ? '終了済み' : '進行中'}
+                        </span>
+                        {room.summary && (
+                          <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
+                            要約あり
+                          </span>
+                        )}
+                      </div>
 
-                  {/* アクションボタン */}
-                  <div className="flex flex-col gap-2 shrink-0">
-                    {!room.endedAt && (
+                      {/* ルーム名・担当 */}
+                      <h2 className="mt-2 text-lg font-semibold text-gray-800 truncate">
+                        {room.name}
+                      </h2>
+                      <p className="text-sm text-gray-500">担当: {room.teacherName}</p>
+
+                      {/* 日時・統計 */}
+                      <div className="mt-2 flex flex-wrap gap-4 text-xs text-gray-400">
+                        <span>作成: {formatDate(room.createdAt)}</span>
+                        {room.endedAt && <span>終了: {formatDate(room.endedAt)}</span>}
+                        <span>チャット {room.messageCount}件</span>
+                        <span>リアクション {room.reactionCount}件</span>
+                        <span>アンケート {room.surveyCount}件</span>
+                        {room.transcript && (
+                          <span>書き起こし {room.transcript.length}文字</span>
+                        )}
+                      </div>
+
+                      {/* カウントダウン */}
+                      <div className="mt-2 flex flex-wrap gap-3">
+                        {endNote && (
+                          <span className="text-xs bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">
+                            {endNote}
+                          </span>
+                        )}
+                        {deleteNote && (
+                          <span className="text-xs bg-red-50 text-red-600 border border-red-200 px-2 py-0.5 rounded-full">
+                            {deleteNote}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* アクションボタン */}
+                    <div className="flex flex-col gap-2 shrink-0">
+                      {!room.endedAt && (
+                        <button
+                          onClick={() => handleEnd(room.id)}
+                          className="text-sm bg-yellow-50 hover:bg-yellow-100 text-yellow-700 border border-yellow-200 px-4 py-1.5 rounded-lg transition whitespace-nowrap"
+                        >
+                          授業終了
+                        </button>
+                      )}
+                      {(room.summary || room.transcript) && (
+                        <button
+                          onClick={() => toggleSummary(room.id)}
+                          className="text-sm bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 px-4 py-1.5 rounded-lg transition whitespace-nowrap"
+                        >
+                          {summaryOpen ? '閉じる' : '要約を見る'}
+                        </button>
+                      )}
                       <button
-                        onClick={() => handleEnd(room.id)}
-                        className="text-sm bg-yellow-50 hover:bg-yellow-100 text-yellow-700 border border-yellow-200 px-4 py-1.5 rounded-lg transition whitespace-nowrap"
+                        onClick={() => setConfirmDelete(room.id)}
+                        className="text-sm bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-4 py-1.5 rounded-lg transition whitespace-nowrap"
                       >
-                        授業終了
+                        削除
                       </button>
-                    )}
-                    <button
-                      onClick={() => setConfirmDelete(room.id)}
-                      className="text-sm bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-4 py-1.5 rounded-lg transition whitespace-nowrap"
-                    >
-                      削除
-                    </button>
+                    </div>
                   </div>
                 </div>
+
+                {/* 要約・書き起こしパネル（展開時） */}
+                {summaryOpen && (
+                  <div className="border-t border-gray-100 bg-gray-50 p-5 space-y-4">
+                    {room.summary ? (
+                      <div>
+                        <h3 className="text-sm font-semibold text-gray-700 mb-2">授業要約</h3>
+                        <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap text-sm leading-relaxed bg-white rounded-lg p-4 border border-gray-200">
+                          {room.summary}
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-400">要約はまだ生成されていません</p>
+                    )}
+                    {room.transcript && (
+                      <div>
+                        <h3 className="text-sm font-semibold text-gray-700 mb-2">書き起こし</h3>
+                        <div className="text-sm text-gray-600 whitespace-pre-wrap bg-white rounded-lg p-4 border border-gray-200 max-h-60 overflow-y-auto leading-relaxed">
+                          {room.transcript}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-            ))}
-          </div>
-        )}
+            );
+          })}
+        </div>
       </main>
 
       {/* 削除確認ダイアログ */}
