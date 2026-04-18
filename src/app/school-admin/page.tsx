@@ -116,7 +116,15 @@ export default function SchoolAdminPage() {
           {/* タブ */}
           <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit mb-5">
             {(['single', 'bulk'] as const).map((t) => (
-              <button key={t} onClick={() => { setAddTab(t); setError(''); setBulkResult(null); }}
+              <button key={t} onClick={() => {
+                setAddTab(t);
+                setError('');
+                setBulkResult(null);
+                setDisplayName('');
+                setStartSeq('');
+                setBulkNames('');
+                setBulkStartSeq('');
+              }}
                 className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition ${addTab === t ? 'bg-white text-teal-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
                 {t === 'single' ? '1人追加' : '一括追加'}
               </button>
