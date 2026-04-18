@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import OpenAI from 'openai';
+import OpenAI, { type ChatCompletion } from 'openai';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';
 
@@ -17,10 +17,10 @@ async function polishMessage(raw: string): Promise<string> {
           content: `次のメッセージを、授業中に教師へ送る丁寧で優しい言葉に変換してください。元の意味を変えず、自然な敬語にしてください。変換後の文章のみ返してください：「${raw}」`,
         }],
         max_tokens: 200,
-      }),
+      }) as Promise<ChatCompletion>,
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
     ]);
-    return (res as Awaited<ReturnType<typeof client.chat.completions.create>>).choices[0].message.content ?? raw;
+    return res.choices[0].message.content ?? raw;
   } catch {
     return raw;
   }
