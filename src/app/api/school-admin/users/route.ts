@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';
 import { hashPassword } from '@/lib/auth';
-import { generateUserId } from '@/lib/userId';
 import type { Role } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
@@ -23,24 +22,64 @@ export async function POST(request: NextRequest) {
   const { error, user } = await requireAuth(request, ['SCHOOL_ADMIN', 'SERVER_ADMIN']);
   if (error) return error;
 
-  const { displayName, role } = await request.json();
-  if (!displayName?.trim()) {
-    return NextResponse.json({ error: '名前は必須です' }, { status: 400 });
-  }
+  const body = await request.json();
+  const { role, startSeq } = body;
+
   const allowedRoles: Role[] = ['TEACHER', 'STUDENT'];
   if (!allowedRoles.includes(role)) {
     return NextResponse.json({ error: '無効なロールです' }, { status: 400 });
   }
 
-  const id = await generateUserId(user!.schoolId);
+  const school = await prisma.school.findUnique({ where: { id: user!.schoolId } });
+  if (!school) return NextResponse.json({ error: 'School not found' }, { status: 404 });
+
+  const prefix = school.prefix;
+
+  // 開始番号を決定
+  let seq: number;
+  if (startSeq && Number.isInteger(startSeq) && startSeq >= 1 && startSeq <= 99999999) {
+    seq = startSeq;
+  } else {
+    const lastUser = await prisma.user.findFirst({
+      where: { id: { startsWith: prefix } },
+      orderBy: { id: 'desc' },
+    });
+    seq = lastUser ? parseInt(lastUser.id.slice(prefix.length), 10) + 1 : 1;
+  }
+
+  const buildId = (n: number) => `${prefix}${String(n).padStart(8, '0')}`;
+
+  // 一括追加
+  if (Array.isArray(body.names)) {
+    const names: string[] = body.names.map((n: string) => n.trim()).filter(Boolean);
+    if (names.length === 0) return NextResponse.json({ error: '名前が入力されていません' }, { status: 400 });
+
+    const created: { id: string; displayName: string; role: string }[] = [];
+    for (const displayName of names) {
+      const id = buildId(seq);
+      const existing = await prisma.user.findUnique({ where: { id } });
+      if (existing) {
+        return NextResponse.json({ error: `ID ${id} はすでに使用されています` }, { status: 409 });
+      }
+      const newUser = await prisma.user.create({
+        data: { id, schoolId: user!.schoolId, role, displayName, passwordHash: hashPassword(id) },
+      });
+      created.push({ id: newUser.id, displayName: newUser.displayName, role: newUser.role });
+      seq++;
+    }
+    return NextResponse.json({ created }, { status: 201 });
+  }
+
+  // 1人追加
+  const { displayName } = body;
+  if (!displayName?.trim()) return NextResponse.json({ error: '名前は必須です' }, { status: 400 });
+
+  const id = buildId(seq);
+  const existing = await prisma.user.findUnique({ where: { id } });
+  if (existing) return NextResponse.json({ error: `ID ${id} はすでに使用されています` }, { status: 409 });
+
   const newUser = await prisma.user.create({
-    data: {
-      id,
-      schoolId: user!.schoolId,
-      role,
-      displayName: displayName.trim(),
-      passwordHash: hashPassword(id),
-    },
+    data: { id, schoolId: user!.schoolId, role, displayName: displayName.trim(), passwordHash: hashPassword(id) },
   });
   return NextResponse.json({ id: newUser.id, displayName: newUser.displayName, role: newUser.role }, { status: 201 });
 }
