@@ -15,6 +15,14 @@ export default function AdminPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    fetch('/api/auth/me').then(async (res) => {
+      if (!res.ok) { router.replace('/login'); return; }
+      const data = await res.json();
+      if (data.role !== 'SERVER_ADMIN') { router.replace('/home'); }
+    });
+  }, [router]);
+
   const fetchSchools = useCallback(async () => {
     const res = await fetch('/api/server-admin/schools');
     if (res.ok) setSchools(await res.json());

@@ -13,6 +13,14 @@ export default function SchoolAdminPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    fetch('/api/auth/me').then(async (res) => {
+      if (!res.ok) { router.replace('/login'); return; }
+      const data = await res.json();
+      if (data.role !== 'SCHOOL_ADMIN') { router.replace('/home'); }
+    });
+  }, [router]);
+
   const fetchUsers = useCallback(async () => {
     const res = await fetch('/api/school-admin/users');
     if (res.ok) setUsers(await res.json());

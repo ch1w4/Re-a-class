@@ -27,7 +27,10 @@ export default function HomePage() {
       fetch('/api/notifications'),
     ]);
     if (!meRes.ok) { router.push('/login'); return; }
-    setMe(await meRes.json());
+    const meData = await meRes.json();
+    if (meData.role === 'SERVER_ADMIN') { router.replace('/admin'); return; }
+    if (meData.role === 'SCHOOL_ADMIN') { router.replace('/school-admin'); return; }
+    setMe(meData);
     if (roomsRes.ok) setRooms(await roomsRes.json());
     if (notifRes.ok) setNotifications(await notifRes.json());
     setLoading(false);
