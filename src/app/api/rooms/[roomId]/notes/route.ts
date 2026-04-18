@@ -1,10 +1,6 @@
-// 教師メモ保存 API
-// PATCH /api/rooms/[roomId]/notes
-// 教師が授業中に取ったメモをDBに保存する。教師トークン必須。
-// メモは要約生成には使われず、教師画面にのみ表示される。
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { validateTeacherToken } from '@/lib/teacherAuth';
+import { requireAuth } from '@/lib/requireAuth';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,18 +8,18 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: { roomId: string } }
 ) {
-  const authError = await validateTeacherToken(request, params.roomId);
-  if (authError) return authError;
+  const { error, user } = await requireAuth(request, ['TEACHER', 'SCHOOL_ADMIN', 'SERVER_ADMIN']);
+  if (error) return error;
 
   const room = await prisma.room.findUnique({ where: { id: params.roomId } });
   if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+  if (user!.role === 'TEACHER' && room.teacherId !== user!.id) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   const { notes } = await request.json();
   if (typeof notes !== 'string') return NextResponse.json({ error: 'Invalid notes' }, { status: 400 });
 
-  const updated = await prisma.room.update({
-    where: { id: params.roomId },
-    data: { notes },
-  });
+  const updated = await prisma.room.update({ where: { id: params.roomId }, data: { notes } });
   return NextResponse.json({ notes: updated.notes });
 }

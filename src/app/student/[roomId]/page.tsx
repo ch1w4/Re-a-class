@@ -1,20 +1,22 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 
 type ReactionType = 'understood' | 'confused' | 'question' | 'slow' | 'fast';
-type Tab = 'reaction' | 'chat' | 'survey' | 'summary';
+type Tab = 'reaction' | 'chat' | 'survey' | 'summary' | 'board' | 'understanding';
 
-interface ChatMessage { id: string; content: string; timestamp: string; studentId: string }
-interface Reaction { id: string; type: ReactionType; timestamp: string }
+interface Me { id: string; displayName: string; role: string }
+interface ChatMessage { id: string; content: string; timestamp: string; userId: string; user: { displayName: string } }
 interface SurveyOption { id: string; text: string; votes: number }
 interface Survey { id: string; question: string; options: SurveyOption[]; isOpen: boolean; createdAt: string }
 interface Room {
-  id: string; name: string; teacherName: string; createdAt: string; endedAt: string | null;
-  chatEnabled: boolean; messages: ChatMessage[]; reactions: Reaction[];
+  id: string; name: string; createdAt: string; endedAt: string | null;
+  chatEnabled: boolean; messages: ChatMessage[];
   surveys: Survey[]; summary: string;
+  teacher: { displayName: string };
 }
+interface BoardPost { id: string; content: string; authorLabel: string; createdAt: string }
 
 const REACTION_BUTTONS: { type: ReactionType; label: string; emoji: string; bg: string; active: string }[] = [
   { type: 'understood', label: '理解した',       emoji: '👍', bg: 'bg-green-100 border-green-300 text-green-700',    active: 'bg-green-500 border-green-600 text-white' },
@@ -24,28 +26,14 @@ const REACTION_BUTTONS: { type: ReactionType; label: string; emoji: string; bg: 
   { type: 'fast',       label: 'もっと速く',     emoji: '🚀', bg: 'bg-purple-100 border-purple-300 text-purple-700', active: 'bg-purple-500 border-purple-600 text-white' },
 ];
 
-const TABS: { id: Tab; label: string; emoji: string }[] = [
-  { id: 'reaction', label: 'リアクション', emoji: '👍' },
-  { id: 'chat',     label: 'チャット',     emoji: '💬' },
-  { id: 'survey',   label: 'アンケート',   emoji: '📊' },
-  { id: 'summary',  label: '要約',         emoji: '📝' },
-];
-
-function getOrCreateStudentId(roomId: string): string {
-  const key = `reaclass_sid_${roomId}`;
-  const existing = localStorage.getItem(key);
-  if (existing) return existing;
-  const id = Math.random().toString(36).slice(2, 10);
-  localStorage.setItem(key, id);
-  return id;
-}
-
 export default function StudentRoom() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const roomId = params.roomId as string;
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  const [me, setMe] = useState<Me | null>(null);
   const [room, setRoom] = useState<Room | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -55,20 +43,41 @@ export default function StudentRoom() {
   const [sentReaction, setSentReaction] = useState<ReactionType | null>(null);
   const [answeredSurveys, setAnsweredSurveys] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState('');
-  const [studentId, setStudentId] = useState('');
 
-  useEffect(() => {
-    setStudentId(getOrCreateStudentId(roomId));
-  }, [roomId]);
+  const [boardPosts, setBoardPosts] = useState<BoardPost[]>([]);
+  const [boardMessage, setBoardMessage] = useState('');
+  const [boardSending, setBoardSending] = useState(false);
+  const [boardLoaded, setBoardLoaded] = useState(false);
+
+  const [understandingActive, setUnderstandingActive] = useState(false);
+  const [understandingAnswered, setUnderstandingAnswered] = useState(false);
+  const [understandingScore, setUnderstandingScore] = useState<number | null>(null);
+  const [understandingComment, setUnderstandingComment] = useState('');
+  const [understandingSubmitting, setUnderstandingSubmitting] = useState(false);
 
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(''), 2000);
   };
 
+  useEffect(() => {
+    fetch('/api/auth/me').then(async (res) => {
+      if (res.status === 401) { router.replace('/login'); return; }
+      const data = await res.json();
+      setMe(data);
+      await fetch(`/api/rooms/${roomId}/enroll`, { method: 'POST' });
+    });
+  }, [roomId, router]);
+
+  useEffect(() => {
+    const t = searchParams.get('tab') as Tab | null;
+    if (t) setTab(t);
+  }, [searchParams]);
+
   const fetchRoom = useCallback(async () => {
     try {
       const res = await fetch(`/api/rooms/${roomId}`);
+      if (res.status === 401) { router.replace('/login'); return; }
       if (!res.ok) { setError('ルームが見つかりません'); return; }
       setRoom(await res.json());
     } catch {
@@ -76,17 +85,40 @@ export default function StudentRoom() {
     } finally {
       setLoading(false);
     }
+  }, [roomId, router]);
+
+  const fetchUnderstanding = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/rooms/${roomId}/understanding`);
+      if (res.ok) {
+        const data = await res.json();
+        setUnderstandingActive(data.active);
+        setUnderstandingAnswered(data.answered);
+      }
+    } catch { /* ignore */ }
   }, [roomId]);
 
-  useEffect(() => { fetchRoom(); }, [fetchRoom]);
   useEffect(() => {
-    const iv = setInterval(fetchRoom, 2000);
+    if (me) { fetchRoom(); fetchUnderstanding(); }
+  }, [me, fetchRoom, fetchUnderstanding]);
+
+  useEffect(() => {
+    if (!me) return;
+    const iv = setInterval(() => { fetchRoom(); fetchUnderstanding(); }, 2000);
     return () => clearInterval(iv);
-  }, [fetchRoom]);
+  }, [me, fetchRoom, fetchUnderstanding]);
 
   useEffect(() => {
     if (tab === 'chat') chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [room?.messages, tab]);
+
+  useEffect(() => {
+    if (tab === 'board' && !boardLoaded) {
+      fetch(`/api/rooms/${roomId}/board`).then(async (res) => {
+        if (res.ok) { setBoardPosts(await res.json()); setBoardLoaded(true); }
+      });
+    }
+  }, [tab, boardLoaded, roomId]);
 
   const sendReaction = async (type: ReactionType) => {
     if (room?.endedAt) return;
@@ -104,13 +136,13 @@ export default function StudentRoom() {
   };
 
   const sendMessage = async () => {
-    if (!message.trim() || sending || !room?.chatEnabled || !studentId || room?.endedAt) return;
+    if (!message.trim() || sending || !room?.chatEnabled || room?.endedAt) return;
     setSending(true);
     try {
       const res = await fetch(`/api/rooms/${roomId}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: message, studentId }),
+        body: JSON.stringify({ content: message }),
       });
       if (res.ok) { setMessage(''); fetchRoom(); }
     } finally {
@@ -130,7 +162,45 @@ export default function StudentRoom() {
     showToast('回答しました！');
   };
 
-  if (loading) return (
+  const sendBoardPost = async () => {
+    if (!boardMessage.trim() || boardSending) return;
+    setBoardSending(true);
+    try {
+      const res = await fetch(`/api/rooms/${roomId}/board`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: boardMessage }),
+      });
+      if (res.ok) {
+        const post = await res.json();
+        setBoardPosts((prev) => [...prev, post]);
+        setBoardMessage('');
+        showToast('投稿しました！');
+      }
+    } finally {
+      setBoardSending(false);
+    }
+  };
+
+  const submitUnderstanding = async () => {
+    if (!understandingScore || understandingSubmitting) return;
+    setUnderstandingSubmitting(true);
+    try {
+      const res = await fetch(`/api/rooms/${roomId}/understanding`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ score: understandingScore, comment: understandingComment }),
+      });
+      if (res.ok) {
+        setUnderstandingAnswered(true);
+        showToast('回答しました！');
+      }
+    } finally {
+      setUnderstandingSubmitting(false);
+    }
+  };
+
+  if (loading || !me) return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="text-center">
         <div className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
@@ -143,39 +213,44 @@ export default function StudentRoom() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="text-center">
         <p className="text-red-500 text-xl mb-4">{error || 'ルームが見つかりません'}</p>
-        <button onClick={() => router.push('/')} className="text-blue-600 hover:underline">トップへ戻る</button>
+        <button onClick={() => router.push('/home')} className="text-blue-600 hover:underline">ホームへ戻る</button>
       </div>
     </div>
   );
 
   const isEnded = !!room.endedAt;
-  const myMessages = room.messages.filter((m) => m.studentId === studentId);
+  const myMessages = room.messages.filter((m) => m.userId === me.id);
   const openSurveys = room.surveys.filter((s) => s.isOpen);
+
+  const tabs: { id: Tab; label: string; emoji: string }[] = [
+    { id: 'reaction', label: 'リアクション', emoji: '👍' },
+    { id: 'chat',     label: 'チャット',     emoji: '💬' },
+    { id: 'survey',   label: 'アンケート',   emoji: '📊' },
+    { id: 'summary',  label: '要約',         emoji: '📝' },
+    ...(isEnded ? [{ id: 'board' as Tab, label: '掲示板', emoji: '📌' }] : []),
+    ...(understandingActive ? [{ id: 'understanding' as Tab, label: '理解度', emoji: '📋' }] : []),
+  ];
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col max-w-lg mx-auto">
-      {/* Toast */}
       {toast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-gray-800 text-white text-sm px-4 py-2 rounded-full shadow-lg">
           {toast}
         </div>
       )}
 
-      {/* Header */}
       <header className={`text-white px-5 py-4 shadow-lg ${isEnded ? 'bg-gray-600' : 'bg-teal-600'}`}>
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="font-bold text-lg">Re:a Class</h1>
-            <p className="text-teal-200 text-xs">{isEnded ? '授業終了' : '生徒モード'}</p>
-          </div>
+          <button onClick={() => router.push('/home')} className="text-teal-200 hover:text-white text-sm font-semibold">
+            ← ホーム
+          </button>
           <div className="text-right">
             <p className="font-semibold">{room.name}</p>
-            <p className="text-teal-200 text-xs">{room.teacherName} 先生</p>
+            <p className="text-teal-200 text-xs">{room.teacher.displayName} 先生</p>
           </div>
         </div>
       </header>
 
-      {/* 終了バナー */}
       {isEnded && (
         <div className="bg-gray-100 border-b border-gray-200 text-center py-3 px-4">
           <p className="text-gray-600 font-semibold text-sm">この授業は終了しました</p>
@@ -185,15 +260,16 @@ export default function StudentRoom() {
         </div>
       )}
 
-      {/* Tab Bar */}
-      <div className="bg-white border-b border-gray-200 flex">
-        {TABS.map((t) => {
-          const hasBadge = t.id === 'survey' && openSurveys.length > 0 && !openSurveys.every((s) => answeredSurveys.has(s.id)) && !isEnded;
+      <div className="bg-white border-b border-gray-200 flex overflow-x-auto">
+        {tabs.map((t) => {
+          const hasBadge =
+            (t.id === 'survey' && openSurveys.length > 0 && !openSurveys.every((s) => answeredSurveys.has(s.id)) && !isEnded) ||
+            (t.id === 'understanding' && understandingActive && !understandingAnswered);
           return (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`flex-1 py-3 text-xs font-semibold transition-all relative ${
+              className={`flex-shrink-0 flex-1 py-3 text-xs font-semibold transition-all relative min-w-[60px] ${
                 tab === t.id ? 'text-teal-600 border-b-2 border-teal-600' : 'text-gray-400 hover:text-gray-600'
               }`}
             >
@@ -205,10 +281,8 @@ export default function StudentRoom() {
         })}
       </div>
 
-      {/* Content */}
       <div className="flex-1 overflow-y-auto p-4">
 
-        {/* REACTION TAB */}
         {tab === 'reaction' && (
           <div>
             {isEnded ? (
@@ -240,7 +314,6 @@ export default function StudentRoom() {
           </div>
         )}
 
-        {/* CHAT TAB */}
         {tab === 'chat' && (
           <div className="flex flex-col h-full">
             {isEnded ? (
@@ -259,7 +332,6 @@ export default function StudentRoom() {
                 <div className="bg-teal-50 border border-teal-200 rounded-xl px-4 py-3 mb-4 text-xs text-teal-700">
                   💬 メッセージは<span className="font-bold">先生だけ</span>に届きます。他の生徒には見えません。
                 </div>
-
                 <div className="space-y-2 mb-4 min-h-40">
                   {myMessages.length === 0 ? (
                     <div className="text-center py-8">
@@ -280,7 +352,6 @@ export default function StudentRoom() {
                   )}
                   <div ref={chatEndRef} />
                 </div>
-
                 <div className="flex gap-2 sticky bottom-0 bg-gray-50 py-2">
                   <input
                     type="text"
@@ -303,7 +374,6 @@ export default function StudentRoom() {
           </div>
         )}
 
-        {/* SURVEY TAB */}
         {tab === 'survey' && (
           <div className="space-y-4">
             {room.surveys.length === 0 ? (
@@ -362,7 +432,6 @@ export default function StudentRoom() {
           </div>
         )}
 
-        {/* SUMMARY TAB */}
         {tab === 'summary' && (
           <div>
             {room.summary ? (
@@ -375,6 +444,100 @@ export default function StudentRoom() {
                 <div className="text-5xl mb-4">📝</div>
                 <p className="text-gray-500 font-semibold">要約はまだありません</p>
                 <p className="text-gray-400 text-sm mt-2">先生が要約を生成すると表示されます</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === 'board' && (
+          <div>
+            <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3 mb-4 text-xs text-indigo-700">
+              📌 授業終了後の匿名掲示板です。投稿者は匿名で表示されます。
+            </div>
+            <div className="space-y-3 mb-4">
+              {boardPosts.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-gray-400 text-sm">まだ投稿がありません</p>
+                  <p className="text-gray-300 text-xs mt-1">最初の投稿をしてみよう！</p>
+                </div>
+              ) : (
+                boardPosts.map((p) => (
+                  <div key={p.id} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-semibold text-indigo-600">{p.authorLabel}</span>
+                      <span className="text-xs text-gray-400">{new Date(p.createdAt).toLocaleString('ja-JP')}</span>
+                    </div>
+                    <p className="text-sm text-gray-700">{p.content}</p>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="flex gap-2 sticky bottom-0 bg-gray-50 py-2">
+              <input
+                type="text"
+                value={boardMessage}
+                onChange={(e) => setBoardMessage(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && sendBoardPost()}
+                placeholder="感想や質問を投稿..."
+                className="flex-1 border border-gray-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              />
+              <button
+                onClick={sendBoardPost}
+                disabled={!boardMessage.trim() || boardSending}
+                className="bg-indigo-500 text-white rounded-2xl px-4 py-3 font-semibold disabled:opacity-50 hover:bg-indigo-600 transition"
+              >
+                投稿
+              </button>
+            </div>
+          </div>
+        )}
+
+        {tab === 'understanding' && (
+          <div>
+            {understandingAnswered ? (
+              <div className="text-center py-16">
+                <div className="text-5xl mb-4">✅</div>
+                <p className="text-gray-600 font-semibold">回答済みです</p>
+                <p className="text-gray-400 text-sm mt-2">ご協力ありがとうございました</p>
+              </div>
+            ) : (
+              <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+                <h2 className="text-base font-bold text-gray-700 mb-1">理解度チェック</h2>
+                <p className="text-xs text-gray-400 mb-5">「{room.name}」の内容はどのくらい理解できましたか？</p>
+                <div className="space-y-3 mb-6">
+                  {[
+                    { score: 1, label: 'よく理解できた',         emoji: '😄', color: 'border-green-400 bg-green-50 text-green-700' },
+                    { score: 2, label: 'だいたい理解できた',     emoji: '🙂', color: 'border-blue-400 bg-blue-50 text-blue-700' },
+                    { score: 3, label: 'あまり理解できなかった', emoji: '😕', color: 'border-yellow-400 bg-yellow-50 text-yellow-700' },
+                    { score: 4, label: '全然理解できなかった',   emoji: '😢', color: 'border-red-400 bg-red-50 text-red-700' },
+                  ].map(({ score, label, emoji, color }) => (
+                    <button
+                      key={score}
+                      onClick={() => setUnderstandingScore(score)}
+                      className={`w-full border-2 rounded-xl px-4 py-3 flex items-center gap-3 text-sm font-semibold transition-all ${
+                        understandingScore === score ? color : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                      }`}
+                    >
+                      <span className="text-2xl">{emoji}</span>
+                      <span>{label}</span>
+                    </button>
+                  ))}
+                </div>
+                <label className="block text-sm font-semibold text-gray-600 mb-2">コメント（任意）</label>
+                <textarea
+                  value={understandingComment}
+                  onChange={(e) => setUnderstandingComment(e.target.value)}
+                  placeholder="わからなかった点や感想を書いてください..."
+                  rows={3}
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none mb-4"
+                />
+                <button
+                  onClick={submitUnderstanding}
+                  disabled={!understandingScore || understandingSubmitting}
+                  className="w-full bg-teal-500 text-white rounded-xl py-3 font-semibold disabled:opacity-50 hover:bg-teal-600 transition"
+                >
+                  {understandingSubmitting ? '送信中...' : '回答する'}
+                </button>
               </div>
             )}
           </div>

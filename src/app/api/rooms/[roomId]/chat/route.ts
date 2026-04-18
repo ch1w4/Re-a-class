@@ -1,27 +1,51 @@
-// 生徒→教師チャット送信 API
-// POST /api/rooms/[roomId]/chat
-// 生徒が匿名でメッセージを送る。チャットが開放中かつ授業が終了していない場合のみ受け付ける。
-// studentId はフロントエンドで生成したランダムIDで、他の生徒には見えない。
 import { NextRequest, NextResponse } from 'next/server';
+import OpenAI from 'openai';
 import { prisma } from '@/lib/prisma';
+import { requireAuth } from '@/lib/requireAuth';
 
 export const dynamic = 'force-dynamic';
+
+async function polishMessage(raw: string): Promise<string> {
+  if (!process.env.OPENAI_API_KEY) return raw;
+  try {
+    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const res = await Promise.race([
+      client.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{
+          role: 'user',
+          content: `次のメッセージを、授業中に教師へ送る丁寧で優しい言葉に変換してください。元の意味を変えず、自然な敬語にしてください。変換後の文章のみ返してください：「${raw}」`,
+        }],
+        max_tokens: 200,
+      }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+    ]);
+    return (res as Awaited<ReturnType<typeof client.chat.completions.create>>).choices[0].message.content ?? raw;
+  } catch {
+    return raw;
+  }
+}
 
 export async function POST(
   request: NextRequest,
   { params }: { params: { roomId: string } }
 ) {
+  const { error, user } = await requireAuth(request, ['STUDENT']);
+  if (error) return error;
+
   const room = await prisma.room.findUnique({ where: { id: params.roomId } });
   if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
   if (room.endedAt) return NextResponse.json({ error: 'Room has ended' }, { status: 403 });
-  if (!room.chatEnabled) return NextResponse.json({ error: 'Chat is disabled' }, { status: 403 });
+  if (!room.chatEnabled) return NextResponse.json({ error: 'Chat disabled' }, { status: 403 });
 
-  const { content, studentId } = await request.json();
-  if (!content?.trim()) return NextResponse.json({ error: 'Empty message' }, { status: 400 });
-  if (!studentId?.trim()) return NextResponse.json({ error: 'Missing studentId' }, { status: 400 });
+  const { content: rawContent } = await request.json();
+  if (!rawContent?.trim()) return NextResponse.json({ error: 'Empty message' }, { status: 400 });
+
+  const content = await polishMessage(rawContent.trim());
 
   const message = await prisma.chatMessage.create({
-    data: { content: content.trim(), studentId, roomId: params.roomId },
+    data: { content, rawContent: rawContent.trim(), userId: user!.id, roomId: params.roomId },
+    include: { user: { select: { displayName: true } } },
   });
-  return NextResponse.json(message);
+  return NextResponse.json(message, { status: 201 });
 }

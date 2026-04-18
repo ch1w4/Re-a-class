@@ -22,8 +22,12 @@ services:
     environment:
       DATABASE_URL: postgresql://reaclass:reaclass_pass@db:5432/reaclass
       NODE_ENV: production
-      GROQ_API_KEY: ${GROQ_API_KEY}
+      SESSION_SECRET: ${SESSION_SECRET}
       CRON_SECRET: ${CRON_SECRET}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      SERVER_ADMIN_ID: ${SERVER_ADMIN_ID}
+      SERVER_ADMIN_PASS: ${SERVER_ADMIN_PASS}
+      SERVER_ADMIN_NAME: ${SERVER_ADMIN_NAME:-システム管理者}
     depends_on:
       db:
         condition: service_healthy

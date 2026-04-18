@@ -1,9 +1,6 @@
-// チャット開放/閉鎖切り替え API
-// POST /api/rooms/[roomId]/chat/toggle
-// 教師がチャットの受付状態をトグルする。教師トークン必須。
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { validateTeacherToken } from '@/lib/teacherAuth';
+import { requireAuth } from '@/lib/requireAuth';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,14 +8,16 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { roomId: string } }
 ) {
-  const authError = await validateTeacherToken(request, params.roomId);
-  if (authError) return authError;
+  const { error, user } = await requireAuth(request, ['TEACHER', 'SCHOOL_ADMIN', 'SERVER_ADMIN']);
+  if (error) return error;
 
   const room = await prisma.room.findUnique({ where: { id: params.roomId } });
   if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+  if (user!.role === 'TEACHER' && room.teacherId !== user!.id) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
   if (room.endedAt) return NextResponse.json({ error: 'Room has ended' }, { status: 403 });
 
-  // 現在の状態を反転させる
   const updated = await prisma.room.update({
     where: { id: params.roomId },
     data: { chatEnabled: !room.chatEnabled },

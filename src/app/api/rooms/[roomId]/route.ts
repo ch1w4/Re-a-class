@@ -1,48 +1,59 @@
-// ルーム詳細取得・授業終了 API
-// GET    /api/rooms/[roomId] → ルームの全データ（チャット・リアクション・アンケート）を返す
-// DELETE /api/rooms/[roomId] → 授業を終了（endedAt をセット）。教師トークン必須。
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { validateTeacherToken } from '@/lib/teacherAuth';
+import { requireAuth } from '@/lib/requireAuth';
 
 export const dynamic = 'force-dynamic';
 
-// 関連データを全て含めて取得するための共通オプション
 const includeAll = {
-  messages: { orderBy: { timestamp: 'asc' as const } },
+  messages: { orderBy: { timestamp: 'asc' as const }, include: { user: { select: { displayName: true } } } },
   reactions: { orderBy: { timestamp: 'asc' as const } },
   surveys: { include: { options: true }, orderBy: { createdAt: 'asc' as const } },
+  teacher: { select: { displayName: true } },
+  enrollments: { select: { userId: true } },
 };
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { roomId: string } }
 ) {
-  const room = await prisma.room.findUnique({
-    where: { id: params.roomId },
-    include: includeAll,
-  });
+  const { error } = await requireAuth(request);
+  if (error) return error;
+
+  const room = await prisma.room.findUnique({ where: { id: params.roomId }, include: includeAll });
   if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
-  // teacherToken は外部に公開しない
-  const { teacherToken: _t, ...roomData } = room;
-  return NextResponse.json(roomData);
+  return NextResponse.json(room);
 }
 
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { roomId: string } }
 ) {
-  const authError = await validateTeacherToken(request, params.roomId);
-  if (authError) return authError;
+  const { error, user } = await requireAuth(request, ['TEACHER', 'SCHOOL_ADMIN', 'SERVER_ADMIN']);
+  if (error) return error;
 
   const room = await prisma.room.findUnique({ where: { id: params.roomId } });
   if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+  if (user!.role === 'TEACHER' && room.teacherId !== user!.id) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
   if (room.endedAt) return NextResponse.json({ error: 'Already ended' }, { status: 400 });
 
+  const endedAt = new Date();
   const updated = await prisma.room.update({
     where: { id: params.roomId },
-    data: { endedAt: new Date() },
+    data: { endedAt },
     include: includeAll,
   });
+
+  // 理解度チェックをスケジュール（4日後）
+  await prisma.understandingCheck.upsert({
+    where: { roomId: params.roomId },
+    update: {},
+    create: {
+      roomId: params.roomId,
+      scheduledAt: new Date(endedAt.getTime() + 4 * 24 * 60 * 60 * 1000),
+    },
+  });
+
   return NextResponse.json(updated);
 }

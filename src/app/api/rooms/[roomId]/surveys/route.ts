@@ -1,9 +1,6 @@
-// アンケート作成 API
-// POST /api/rooms/[roomId]/surveys
-// 教師がアンケートを作成する。質問文と2つ以上の選択肢が必要。教師トークン必須。
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { validateTeacherToken } from '@/lib/teacherAuth';
+import { requireAuth } from '@/lib/requireAuth';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,11 +8,14 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { roomId: string } }
 ) {
-  const authError = await validateTeacherToken(request, params.roomId);
-  if (authError) return authError;
+  const { error, user } = await requireAuth(request, ['TEACHER', 'SCHOOL_ADMIN', 'SERVER_ADMIN']);
+  if (error) return error;
 
   const room = await prisma.room.findUnique({ where: { id: params.roomId } });
   if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+  if (user!.role === 'TEACHER' && room.teacherId !== user!.id) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
   if (room.endedAt) return NextResponse.json({ error: 'Room has ended' }, { status: 403 });
 
   const { question, options } = await request.json();
@@ -23,18 +23,13 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid survey data' }, { status: 400 });
   }
 
-  // アンケートと選択肢を同時に作成する
   const survey = await prisma.survey.create({
     data: {
       question: question.trim(),
       roomId: params.roomId,
-      options: {
-        create: (options as string[])
-          .filter((o) => o.trim())
-          .map((text) => ({ text: text.trim() })),
-      },
+      options: { create: (options as string[]).filter((o) => o.trim()).map((text) => ({ text: text.trim() })) },
     },
     include: { options: true },
   });
-  return NextResponse.json(survey);
+  return NextResponse.json(survey, { status: 201 });
 }

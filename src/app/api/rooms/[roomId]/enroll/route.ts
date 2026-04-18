@@ -8,14 +8,17 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { roomId: string } }
 ) {
-  const { error } = await requireAuth(request);
+  const { error, user } = await requireAuth(request, ['STUDENT']);
   if (error) return error;
 
   const room = await prisma.room.findUnique({ where: { id: params.roomId } });
   if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
-  if (room.endedAt) return NextResponse.json({ error: 'Room has ended' }, { status: 403 });
 
-  const { type } = await request.json();
-  const reaction = await prisma.reaction.create({ data: { type, roomId: params.roomId } });
-  return NextResponse.json(reaction, { status: 201 });
+  await prisma.enrollment.upsert({
+    where: { userId_roomId: { userId: user!.id, roomId: params.roomId } },
+    update: {},
+    create: { userId: user!.id, roomId: params.roomId },
+  });
+
+  return NextResponse.json({ ok: true });
 }
