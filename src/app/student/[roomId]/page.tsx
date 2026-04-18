@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 
 type ReactionType = 'understood' | 'confused' | 'question' | 'slow' | 'fast';
@@ -26,7 +26,7 @@ const REACTION_BUTTONS: { type: ReactionType; label: string; emoji: string; bg: 
   { type: 'fast',       label: 'もっと速く',     emoji: '🚀', bg: 'bg-purple-100 border-purple-300 text-purple-700', active: 'bg-purple-500 border-purple-600 text-white' },
 ];
 
-export default function StudentRoom() {
+function StudentRoom() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -544,5 +544,13 @@ export default function StudentRoom() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function StudentRoomPage() {
+  return (
+    <Suspense>
+      <StudentRoom />
+    </Suspense>
   );
 }
