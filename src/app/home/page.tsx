@@ -50,8 +50,8 @@ export default function HomePage() {
     router.push('/login');
   };
 
-  const createRoom = async () => {
-    const res = await fetch('/api/rooms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+  const createRoom = async (name: string) => {
+    const res = await fetch('/api/rooms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
     const data = await res.json();
     if (res.ok) router.push(`/teacher/${data.id}`);
   };
