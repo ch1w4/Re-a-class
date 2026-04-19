@@ -22,6 +22,7 @@ export default function SchoolAdminPage() {
 
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [formKey, setFormKey] = useState(0);
 
   useEffect(() => {
     fetch('/api/auth/me').then(async (res) => {
@@ -53,7 +54,7 @@ export default function SchoolAdminPage() {
     const data = await res.json();
     if (!res.ok) { setError(data.error); } else {
       alert(`作成しました\nID: ${data.id}\n初期パスワード: ${data.id}`);
-      setDisplayName(''); setStartSeq(''); fetchUsers();
+      setFormKey((k) => k + 1); fetchUsers();
     }
     setLoading(false);
   };
@@ -75,7 +76,7 @@ export default function SchoolAdminPage() {
     const data = await res.json();
     if (!res.ok) { setError(data.error); } else {
       setBulkResult(data.created);
-      setBulkNames(''); setBulkStartSeq(''); fetchUsers();
+      setFormKey((k) => k + 1); fetchUsers();
     }
     setLoading(false);
   };
@@ -120,10 +121,7 @@ export default function SchoolAdminPage() {
                 setAddTab(t);
                 setError('');
                 setBulkResult(null);
-                setDisplayName('');
-                setStartSeq('');
-                setBulkNames('');
-                setBulkStartSeq('');
+                setFormKey((k) => k + 1);
               }}
                 className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition ${addTab === t ? 'bg-white text-teal-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
                 {t === 'single' ? '1人追加' : '一括追加'}
@@ -142,7 +140,7 @@ export default function SchoolAdminPage() {
           </div>
 
           {addTab === 'single' && (
-            <div className="space-y-3">
+            <div key={formKey} className="space-y-3">
               <div className="grid grid-cols-3 gap-3">
                 <div className="col-span-2">
                   <label className="block text-sm text-gray-600 mb-1">氏名</label>
@@ -167,7 +165,7 @@ export default function SchoolAdminPage() {
           )}
 
           {addTab === 'bulk' && (
-            <div className="space-y-3">
+            <div key={formKey} className="space-y-3">
               <div>
                 <label className="block text-sm text-gray-600 mb-1">氏名リスト（1行1人）</label>
                 <textarea value={bulkNames} onChange={(e) => setBulkNames(e.target.value)}
