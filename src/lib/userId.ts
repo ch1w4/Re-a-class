@@ -5,13 +5,14 @@ export async function generateUserId(schoolId: string): Promise<string> {
   if (!school) throw new Error('School not found');
   const prefix = school.prefix;
 
-  const users = await prisma.user.findMany({
+  const all = await prisma.user.findMany({
     where: { id: { startsWith: prefix } },
-    orderBy: { id: 'desc' },
-    take: 1,
+    select: { id: true },
   });
+  const used = new Set(all.map((u) => parseInt(u.id.slice(prefix.length), 10)));
+  let seq = 1;
+  while (used.has(seq)) seq++;
 
-  const seq = users.length === 0 ? 1 : parseInt(users[0].id.slice(prefix.length), 10) + 1;
   if (seq > 99999999) throw new Error('ID上限に達しました');
   return `${prefix}${String(seq).padStart(8, '0')}`;
 }

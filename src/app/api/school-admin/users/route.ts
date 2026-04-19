@@ -40,11 +40,14 @@ export async function POST(request: NextRequest) {
   if (startSeq && Number.isInteger(startSeq) && startSeq >= 1 && startSeq <= 99999999) {
     seq = startSeq;
   } else {
-    const lastUser = await prisma.user.findFirst({
+    // 最小の未使用番号を探す
+    const all = await prisma.user.findMany({
       where: { id: { startsWith: prefix } },
-      orderBy: { id: 'desc' },
+      select: { id: true },
     });
-    seq = lastUser ? parseInt(lastUser.id.slice(prefix.length), 10) + 1 : 1;
+    const used = new Set(all.map((u) => parseInt(u.id.slice(prefix.length), 10)));
+    seq = 1;
+    while (used.has(seq)) seq++;
   }
 
   const buildId = (n: number) => `${prefix}${String(n).padStart(8, '0')}`;
