@@ -17,7 +17,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { roomId: string } }
 ) {
-  const { error, user } = await requireAuth(request);
+  const { error, user } = await requireAuth(request, ['STUDENT', 'SCHOOL_ADMIN', 'SERVER_ADMIN']);
   if (error) return error;
 
   const room = await prisma.room.findUnique({ where: { id: params.roomId } });
