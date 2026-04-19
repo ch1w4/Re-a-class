@@ -4,10 +4,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 
 interface User { id: string; displayName: string; role: string; createdAt: string }
+interface Room { id: string; name: string; endedAt: string | null; teacher: { displayName: string } }
 
 export default function SchoolAdminPage() {
   const router = useRouter();
   const [users, setUsers] = useState<User[]>([]);
+  const [rooms, setRooms] = useState<Room[]>([]);
   const [addTab, setAddTab] = useState<'single' | 'bulk'>('single');
   const [role, setRole] = useState<'TEACHER' | 'STUDENT'>('STUDENT');
 
@@ -37,7 +39,12 @@ export default function SchoolAdminPage() {
     if (res.ok) setUsers(await res.json());
   }, []);
 
-  useEffect(() => { fetchUsers(); }, [fetchUsers]);
+  const fetchRooms = useCallback(async () => {
+    const res = await fetch('/api/rooms');
+    if (res.ok) setRooms(await res.json());
+  }, []);
+
+  useEffect(() => { fetchUsers(); fetchRooms(); }, [fetchUsers, fetchRooms]);
 
   const createSingle = async () => {
     if (!displayName.trim()) return;
@@ -210,6 +217,27 @@ export default function SchoolAdminPage() {
             </div>
           )}
         </section>
+
+        {/* 掲示板一覧 */}
+        {rooms.filter((r) => r.endedAt).length > 0 && (
+          <section className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+            <h2 className="text-lg font-bold text-gray-700 mb-4">終了済み講義の掲示板</h2>
+            <div className="space-y-2">
+              {rooms.filter((r) => r.endedAt).map((r) => (
+                <div key={r.id} className="flex items-center justify-between bg-gray-50 rounded-xl px-4 py-3">
+                  <div>
+                    <p className="font-semibold text-sm text-gray-800">{r.name}</p>
+                    <p className="text-xs text-gray-400">{r.teacher?.displayName} 先生 · {new Date(r.endedAt!).toLocaleDateString('ja-JP')} 終了</p>
+                  </div>
+                  <button onClick={() => router.push(`/board/${r.id}`)}
+                    className="text-xs bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-lg font-semibold hover:bg-indigo-200 transition">
+                    掲示板を見る
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* 教師一覧 */}
         <UserTable title="教師" users={teachers} onDelete={deleteUser} onReset={resetPassword} />

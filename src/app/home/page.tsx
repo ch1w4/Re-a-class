@@ -158,22 +158,28 @@ export default function HomePage() {
           ) : (
             <div className="space-y-2">
               {rooms.map((r) => (
-                <button key={r.id} onClick={() => router.push(me?.role === 'TEACHER' ? `/teacher/${r.id}` : `/student/${r.id}`)}
-                  className="w-full text-left bg-gray-50 hover:bg-gray-100 rounded-xl px-4 py-3 transition flex items-center justify-between">
-                  <div>
+                <div key={r.id} className="bg-gray-50 rounded-xl px-4 py-3 flex items-center justify-between gap-2">
+                  <button onClick={() => router.push(me?.role === 'TEACHER' ? `/teacher/${r.id}` : `/student/${r.id}`)}
+                    className="flex-1 text-left hover:opacity-80 transition">
                     <p className="font-semibold text-gray-800">{r.name}</p>
                     <p className="text-xs text-gray-500 mt-0.5">
                       {me?.role === 'STUDENT' && r.teacher && `${r.teacher.displayName} 先生 · `}
                       {new Date(r.createdAt).toLocaleDateString('ja-JP')}
                     </p>
-                  </div>
-                  <div className="flex items-center gap-2">
+                  </button>
+                  <div className="flex items-center gap-2 flex-shrink-0">
                     {r._count && <span className="text-xs text-gray-400">{r._count.enrollments}人</span>}
+                    {r.endedAt && me?.role === 'STUDENT' && (
+                      <button onClick={() => router.push(`/board/${r.id}`)}
+                        className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-semibold hover:bg-indigo-200 transition">
+                        掲示板
+                      </button>
+                    )}
                     <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${r.endedAt ? 'bg-gray-100 text-gray-500' : 'bg-green-100 text-green-700'}`}>
                       {r.endedAt ? '終了' : '進行中'}
                     </span>
                   </div>
-                </button>
+                </div>
               ))}
             </div>
           )}
