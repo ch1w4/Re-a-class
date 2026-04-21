@@ -20,8 +20,6 @@
 ### 教師側
 - ルーム作成・QR コード発行（生徒は QR を読むだけで参加）
 - 5 種類のリアクション（理解した / わからない / 質問あり / ゆっくり / 速く）をリアルタイム集計・グラフ表示
-- 生徒からの個別チャット受信（送信前に AI が自動で敬語に変換）
-- チャット受付のオン/オフ切り替え
 - アンケート作成・リアルタイム集計・締め切り
 - 授業メモ（板書内容等）の手動保存
 - 授業音声の録音 → OpenAI Whisper（whisper-1）で日本語テキストに書き起こし（複数回録音を追記）
@@ -32,7 +30,6 @@
 ### 生徒側
 - ルーム ID 入力 or QR コードスキャンで匿名参加・授業履歴の自動記録
 - 5 種類のリアクション送信（匿名・何度でも）
-- 先生だけに届く個別チャット（他の生徒には見えない）
 - アンケート回答・リアルタイム集計結果の閲覧
 - 教師が生成した AI 要約レポートの閲覧
 - 授業終了後の匿名掲示板（感想・質問を投稿・閲覧）
@@ -62,7 +59,7 @@
 | 認証 | セッション Cookie（httpOnly）+ scrypt パスワードハッシュ（salt:hash 形式） |
 | リアルタイム更新 | HTTP ポーリング（授業画面: 2 秒間隔 / 通知: 10 秒間隔） |
 | 音声書き起こし | OpenAI Whisper（whisper-1） |
-| AI 機能 | OpenAI gpt-4o-mini（授業要約 / チャット敬語変換 / 理解度集計サマリー） |
+| AI 機能 | OpenAI gpt-4o-mini（授業要約 / 理解度集計サマリー） |
 | インフラ | Docker / Docker Compose |
 
 ---
@@ -250,7 +247,7 @@ curl -X POST https://your-domain/api/cron/understanding-tally \
 | 変数名 | 説明 |
 |---|---|
 | `DATABASE_URL` | PostgreSQL 接続 URL |
-| `OPENAI_API_KEY` | OpenAI API キー（Whisper 書き起こし / gpt-4o-mini 要約・チャット変換・理解度集計） |
+| `OPENAI_API_KEY` | OpenAI API キー（Whisper 書き起こし / gpt-4o-mini 要約・理解度集計） |
 | `CRON_SECRET` | cron エンドポイントの認証キー |
 
 ---
@@ -279,8 +276,6 @@ Re-a-class/
 │   │       │   └── [roomId]/
 │   │       │       ├── route.ts               # GET 詳細 / DELETE 授業終了
 │   │       │       ├── qr/route.ts            # GET QR コード生成
-│   │       │       ├── chat/route.ts          # POST チャット送信（AI 敬語変換）
-│   │       │       ├── chat/toggle/route.ts   # POST チャット受付切り替え
 │   │       │       ├── reactions/route.ts     # POST リアクション送信
 │   │       │       ├── notes/route.ts         # PATCH 授業メモ保存
 │   │       │       ├── surveys/route.ts       # POST アンケート作成

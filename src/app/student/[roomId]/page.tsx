@@ -3,8 +3,6 @@
 // ロール STUDENT のみアクセス可能。
 // 主な機能:
 //   - 5 種類のリアクション送信（理解した・わからない・質問あり・ゆっくり・速く）
-//   - 先生だけに届く個別チャット（chatEnabled=true のときのみ送信可能）
-//     → OpenAI gpt-4o-mini で自動的に丁寧な敬語に変換してから保存
 //   - アンケート回答・結果閲覧
 //   - 授業メモ（教師が書いた板書内容）の閲覧
 //   - 授業終了後: AI 要約・書き起こしの閲覧
@@ -15,16 +13,14 @@ import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 
 type ReactionType = 'understood' | 'confused' | 'question' | 'slow' | 'fast';
-// タブ ID の型: 授業中は reaction/chat/survey/summary、終了後は board が追加、理解度チェック期間中は understanding が追加
-type Tab = 'reaction' | 'chat' | 'survey' | 'summary' | 'board' | 'understanding';
+// タブ ID の型: 授業中は reaction/survey/summary、終了後は board が追加、理解度チェック期間中は understanding が追加
+type Tab = 'reaction' | 'survey' | 'summary' | 'board' | 'understanding';
 
 interface Me { id: string; displayName: string; role: string }
-interface ChatMessage { id: string; content: string; timestamp: string; userId: string; user: { displayName: string } }
 interface SurveyOption { id: string; text: string; votes: number }
 interface Survey { id: string; question: string; options: SurveyOption[]; isOpen: boolean; createdAt: string }
 interface Room {
   id: string; name: string; createdAt: string; endedAt: string | null;
-  chatEnabled: boolean; messages: ChatMessage[];
   surveys: Survey[]; summary: string;
   teacher: { displayName: string };
 }
@@ -44,8 +40,6 @@ function StudentRoom() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const roomId = params.roomId as string;
-  const chatEndRef = useRef<HTMLDivElement>(null); // チャット末尾へ自動スクロールするための参照
-
   // --- 基本状態 ---
   const [me, setMe] = useState<Me | null>(null);              // ログイン中の生徒情報
   const [room, setRoom] = useState<Room | null>(null);        // 授業データ（2 秒ポーリングで更新）
@@ -53,10 +47,6 @@ function StudentRoom() {
   const [error, setError] = useState('');                     // エラーメッセージ
   const [tab, setTab] = useState<Tab>('reaction');            // 現在選択中のタブ
   const [toast, setToast] = useState('');                     // トースト通知のメッセージ（2 秒で消える）
-
-  // --- チャット関連 ---
-  const [message, setMessage] = useState('');       // 入力中のメッセージテキスト
-  const [sending, setSending] = useState(false);    // 送信中フラグ（二重送信防止）
 
   // --- リアクション関連 ---
   // sentReaction: 直前に送ったリアクション種別。1.5 秒間ハイライト表示して null に戻す
@@ -141,11 +131,6 @@ function StudentRoom() {
     return () => clearInterval(iv);
   }, [me, fetchRoom, fetchUnderstanding]);
 
-  // チャットタブを開いているときに新しいメッセージが届いたら末尾へスクロールする
-  useEffect(() => {
-    if (tab === 'chat') chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [room?.messages, tab]);
-
   // 掲示板タブを開いたとき、まだデータ未取得であれば一度だけ投稿一覧を取得する
   // ポーリングではなく初回のみ取得（掲示板は授業終了後で更新頻度が低いため）
   useEffect(() => {
@@ -170,24 +155,6 @@ function StudentRoom() {
       showToast('送信しました！');
     } finally {
       setTimeout(() => setSentReaction(null), 1500);
-    }
-  };
-
-  // チャットメッセージを送信する。
-  // chatEnabled=false または授業終了後はブロック。
-  // 送信後は入力欄をクリアして最新メッセージを反映するために fetchRoom を呼ぶ。
-  const sendMessage = async () => {
-    if (!message.trim() || sending || !room?.chatEnabled || room?.endedAt) return;
-    setSending(true);
-    try {
-      const res = await fetch(`/api/rooms/${roomId}/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: message }),
-      });
-      if (res.ok) { setMessage(''); fetchRoom(); }
-    } finally {
-      setSending(false);
     }
   };
 
@@ -267,14 +234,11 @@ function StudentRoom() {
   );
 
   const isEnded = !!room.endedAt; // 授業が終了しているかどうか（true なら入力系を全ブロック）
-  // 自分が送ったメッセージのみ抽出してチャット欄に表示（他の生徒のメッセージは見えない）
-  const myMessages = room.messages.filter((m) => m.userId === me.id);
   const openSurveys = room.surveys.filter((s) => s.isOpen); // 受付中のアンケート（バッジ表示の判定に使用）
 
   // タブリスト: 授業終了後に board タブ、チェック期間中に understanding タブが追加される
   const tabs: { id: Tab; label: string; emoji: string }[] = [
     { id: 'reaction', label: 'リアクション', emoji: '👍' },
-    { id: 'chat',     label: 'チャット',     emoji: '💬' },
     { id: 'survey',   label: 'アンケート',   emoji: '📊' },
     { id: 'summary',  label: '要約',         emoji: '📝' },
     ...(isEnded ? [{ id: 'board' as Tab, label: '掲示板', emoji: '📌' }] : []),
@@ -368,73 +332,6 @@ function StudentRoom() {
                   ))}
                 </div>
                 <p className="text-center text-xs text-gray-400 mt-6">何度でも送れます。匿名で先生に届きます。</p>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* ===== チャットタブ ===== */}
-        {tab === 'chat' && (
-          <div className="flex flex-col h-full">
-            {isEnded ? (
-              // 授業終了後はチャット送信不可
-              <div className="text-center py-16">
-                <div className="text-5xl mb-4">🔒</div>
-                <p className="text-gray-500 font-semibold">チャットは終了しました</p>
-              </div>
-            ) : !room.chatEnabled ? (
-              // 教師がチャットを閉鎖中の場合
-              <div className="text-center py-16">
-                <div className="text-5xl mb-4">🔒</div>
-                <p className="text-gray-500 font-semibold">チャットは閉鎖中です</p>
-                <p className="text-gray-400 text-sm mt-2">先生がチャットを開放すると投稿できます</p>
-              </div>
-            ) : (
-              <>
-                <div className="bg-teal-50 border border-teal-200 rounded-xl px-4 py-3 mb-4 text-xs text-teal-700">
-                  💬 メッセージは<span className="font-bold">先生だけ</span>に届きます。他の生徒には見えません。
-                </div>
-                {/* 自分のメッセージのみ表示（他の生徒のメッセージは表示しない） */}
-                <div className="space-y-2 mb-4 min-h-40">
-                  {myMessages.length === 0 ? (
-                    <div className="text-center py-8">
-                      <p className="text-gray-400 text-sm">まだメッセージを送っていません</p>
-                      <p className="text-gray-300 text-xs mt-1">質問や感想を気軽に送ってみよう</p>
-                    </div>
-                  ) : (
-                    myMessages.map((m) => (
-                      <div key={m.id} className="flex justify-end">
-                        {/* 吹き出しスタイルのメッセージバブル（右揃え） */}
-                        <div className="bg-teal-500 text-white rounded-2xl rounded-br-sm px-4 py-3 max-w-xs shadow-sm">
-                          <p className="text-sm">{m.content}</p>
-                          <p className="text-xs text-teal-200 mt-1 text-right">
-                            {new Date(m.timestamp).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
-                          </p>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                  {/* スクロール末尾のアンカー（新メッセージ到着時に自動スクロールするため） */}
-                  <div ref={chatEndRef} />
-                </div>
-                {/* メッセージ入力エリア: sticky で常に画面下部に表示 */}
-                <div className="flex gap-2 sticky bottom-0 bg-gray-50 py-2">
-                  <input
-                    type="text"
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-                    placeholder="先生へのメッセージ..."
-                    className="flex-1 border border-gray-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-                  />
-                  <button
-                    onClick={sendMessage}
-                    disabled={!message.trim() || sending}
-                    className="bg-teal-500 text-white rounded-2xl px-4 py-3 font-semibold disabled:opacity-50 hover:bg-teal-600 transition"
-                  >
-                    送信
-                  </button>
-                </div>
               </>
             )}
           </div>

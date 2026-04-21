@@ -28,7 +28,6 @@ model User {
   sessions       Session[]
   createdRooms   Room[]                       @relation("TeacherRooms")
   enrollments    Enrollment[]
-  messages       ChatMessage[]
   boardPosts     BoardPost[]
   checkResponses UnderstandingCheckResponse[]
   notifications  Notification[]
@@ -58,12 +57,10 @@ model Room {
   teacher     User      @relation("TeacherRooms", fields: [teacherId], references: [id])
   createdAt   DateTime  @default(now())
   endedAt     DateTime?
-  chatEnabled Boolean   @default(false)
   notes       String    @default("")
   transcript  String    @default("")
   summary     String    @default("")
 
-  messages           ChatMessage[]
   reactions          Reaction[]
   surveys            Survey[]
   enrollments        Enrollment[]
@@ -80,17 +77,6 @@ model Enrollment {
   joinedAt DateTime @default(now())
 
   @@unique([userId, roomId])
-}
-
-model ChatMessage {
-  id         String   @id @default(uuid())
-  content    String
-  rawContent String   @default("")
-  userId     String
-  user       User     @relation(fields: [userId], references: [id])
-  roomId     String
-  room       Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  timestamp  DateTime @default(now())
 }
 
 model Reaction {

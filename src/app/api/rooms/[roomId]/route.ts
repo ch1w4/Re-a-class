@@ -11,7 +11,6 @@ export const dynamic = 'force-dynamic';
 
 // GET でルームデータを取得する際に常に含めるリレーション定義
 const includeAll = {
-  messages: { orderBy: { timestamp: 'asc' as const }, include: { user: { select: { displayName: true } } } },
   reactions: { orderBy: { timestamp: 'asc' as const } },
   surveys: { include: { options: true }, orderBy: { createdAt: 'asc' as const } },
   teacher: { select: { displayName: true } },
