@@ -1,3 +1,10 @@
+// サーバー管理者用 学校削除・学校管理者作成 API
+// DELETE /api/server-admin/schools/[schoolId]
+//   学校を完全削除する。トランザクション内でチャット・掲示板・理解度回答・
+//   ルーム・ユーザーをすべて削除してから学校レコードを削除する。
+// POST /api/server-admin/schools/[schoolId]
+//   その学校の SCHOOL_ADMIN ユーザーを新規作成する（ID 自動採番、初期PW=ID）。
+// ロール: SERVER_ADMIN のみ
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';

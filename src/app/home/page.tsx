@@ -1,4 +1,9 @@
 'use client';
+// ホームページ (/home)
+// 教師・生徒が使うメインダッシュボード。ロールによって表示内容が変わる。
+// 教師: 授業を作成するフォーム + 作成した講義一覧
+// 生徒: ルームID入力で授業参加 + 参加した講義一覧（終了済みは掲示板へのリンク付き）
+// 共通: ベルアイコンの通知ドロップダウン（未読バッジ表示）、10 秒ごとに通知を更新
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';

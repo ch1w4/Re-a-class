@@ -1,3 +1,10 @@
+// 自動クリーンアップ cron エンドポイント
+// POST /api/cron/cleanup — x-cron-secret ヘッダーで認証（CRON_SECRET 環境変数と照合）
+// 実行内容:
+//   1. 作成から 2 時間以上経過したアクティブなルームを自動終了（endedAt をセット）
+//      → 同時に理解度チェックを終了 4 日後にスケジュール
+//   2. 終了から 1 週間以上経過したルームと全関連データを削除
+// サーバー側の crontab 等で 1 時間ごとに呼び出す想定。
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 

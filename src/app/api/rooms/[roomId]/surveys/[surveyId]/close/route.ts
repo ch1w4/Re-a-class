@@ -1,3 +1,7 @@
+// アンケート締め切り API
+// POST /api/rooms/[roomId]/surveys/[surveyId]/close
+// isOpen を false にして投票受付を終了する。
+// ロール: TEACHER（自分のルームのみ）/ SCHOOL_ADMIN / SERVER_ADMIN
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';

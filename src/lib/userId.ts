@@ -1,5 +1,10 @@
+// ユーザー ID 自動採番ユーティリティ
+// 学校の prefix（例: "A"）+ 8 桁連番（例: "00000001"）で ID を生成する。
+// 既存 ID の中から最小の未使用番号を探して割り当てる（抜け番号の再利用）。
+// 上限は 99,999,999 で、超えた場合はエラーをスローする。
 import { prisma } from './prisma';
 
+// 例: schoolId に対応する prefix が "A" なら "A00000001", "A00000002" ... を返す
 export async function generateUserId(schoolId: string): Promise<string> {
   const school = await prisma.school.findUnique({ where: { id: schoolId } });
   if (!school) throw new Error('School not found');

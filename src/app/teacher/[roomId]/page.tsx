@@ -1,4 +1,14 @@
 'use client';
+// 教師用授業画面 (/teacher/[roomId])
+// ロール TEACHER / SCHOOL_ADMIN / SERVER_ADMIN がアクセス可能。
+// 主な機能:
+//   - リアクションのリアルタイム集計（2 秒 polling）
+//   - 生徒からの個別チャット受信（chatEnabled のオン/オフ切り替え可能）
+//   - アンケート作成・締め切り・結果表示
+//   - 教師メモ（板書内容等）のリアルタイム保存
+//   - 授業録音（MediaRecorder API）→ 停止後に OpenAI Whisper で書き起こし
+//   - AI 要約レポート生成（書き起こし・リアクション・アンケートをもとに gpt-4o-mini）
+//   - 授業終了（endedAt をセット、以降は生徒からの入力をブロック）
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';

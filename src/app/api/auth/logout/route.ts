@@ -1,3 +1,6 @@
+// ログアウト API
+// POST /api/auth/logout
+// DB からセッションを削除し、Cookie を空にしてログアウトする。
 import { NextRequest, NextResponse } from 'next/server';
 import { deleteSession } from '@/lib/auth';
 

@@ -1,3 +1,8 @@
+// API ルート用の認証チェックヘルパー
+// Cookie の session_id を検証し、未認証なら 401、ロール不一致なら 403 を返す。
+// roles を省略すると「ログイン済みであれば全ロール許可」になる。
+// 使い方: const { error, user } = await requireAuth(request, ['TEACHER']);
+//         if (error) return error;
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionUser } from './auth';
 import type { Role } from '@prisma/client';

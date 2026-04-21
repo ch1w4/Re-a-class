@@ -1,3 +1,7 @@
+// アンケート投票 API
+// POST /api/rooms/[roomId]/surveys/[surveyId]/answer
+// 選択肢の votes を 1 増やす。isOpen=false（締め切り済み）の場合は拒否。
+// ロール: ログイン済み全ユーザー（重複投票の制限はサーバー側では行わない）
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';

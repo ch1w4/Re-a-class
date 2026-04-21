@@ -1,3 +1,8 @@
+// 学校管理者用 ユーザー削除・パスワードリセット API
+// DELETE /api/school-admin/users/[userId] — ユーザーを削除する
+// PATCH  /api/school-admin/users/[userId] — パスワードをユーザー ID にリセットする
+// 他校のユーザーへの操作は拒否（schoolId でフィルタ）。
+// ロール: SCHOOL_ADMIN / SERVER_ADMIN
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';

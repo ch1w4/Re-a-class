@@ -1,3 +1,7 @@
+// 通知既読化 API
+// PATCH /api/notifications/[notifId]
+// 指定した通知の isRead を true にする。
+// 自分の通知のみ操作可能（userId フィルタ済み）。
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';

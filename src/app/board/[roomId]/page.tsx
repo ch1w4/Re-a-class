@@ -1,4 +1,10 @@
 'use client';
+// 授業後の匿名掲示板ページ (/board/[roomId])
+// 授業終了後に生徒が感想・質問を匿名で投稿できる掲示板。
+// 生徒同士は匿名ラベル（「生徒A」等）で表示されるため、互いの発信者がわからない。
+// SCHOOL_ADMIN/SERVER_ADMIN は実名表示（管理者モード）。
+// TEACHER はアクセス不可（403 エラー表示）。
+// 投稿はリアルタイムで一覧に追加される。
 
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';

@@ -1,3 +1,9 @@
+// 理解度チェック通知 cron エンドポイント
+// POST /api/cron/understanding-notify — x-cron-secret ヘッダーで認証
+// scheduledAt が現在時刻以前で、まだ notifiedAt がない UnderstandingCheck を対象に、
+// その授業に参加した生徒全員に「UNDERSTANDING_CHECK」通知を送信する。
+// 通知後は notifiedAt を記録し、集計 (tally) を 3 日後にスケジュールする。
+// サーバー側の crontab 等で 1 時間ごとに呼び出す想定。
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 

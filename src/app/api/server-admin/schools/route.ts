@@ -1,3 +1,8 @@
+// サーバー管理者用 学校一覧・作成 API
+// GET  /api/server-admin/schools — 全学校とユーザー数を返す
+// POST /api/server-admin/schools — 新しい学校を追加する
+//   prefix は大文字英字（例: "A"）でユーザー ID の先頭に使用。一意制約あり。
+// ロール: SERVER_ADMIN のみ
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';

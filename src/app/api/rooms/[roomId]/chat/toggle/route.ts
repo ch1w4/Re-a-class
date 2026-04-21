@@ -1,3 +1,7 @@
+// チャット有効/無効 切り替え API
+// POST /api/rooms/[roomId]/chat/toggle
+// 教師がチャット受付をオン/オフする。現在の chatEnabled を反転して返す。
+// ロール: TEACHER（自分のルームのみ）/ SCHOOL_ADMIN / SERVER_ADMIN
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';

@@ -1,3 +1,7 @@
+// 教師メモ更新 API
+// PATCH /api/rooms/[roomId]/notes
+// 教師が授業メモ（板書・補足など）をリアルタイムで保存する。
+// ロール: TEACHER（自分のルームのみ）/ SCHOOL_ADMIN / SERVER_ADMIN
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';

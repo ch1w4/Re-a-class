@@ -1,3 +1,8 @@
+// ルーム詳細取得・授業終了 API
+// GET    /api/rooms/[roomId] — チャット・リアクション・アンケートを含む全データを返す
+// DELETE /api/rooms/[roomId] — endedAt をセットして授業を終了する。授業終了と同時に
+//                              「理解度チェック」を 4 日後にスケジュールする。
+//                              ロール: TEACHER（自分のルームのみ）/ SCHOOL_ADMIN / SERVER_ADMIN
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';

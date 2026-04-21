@@ -1,3 +1,11 @@
+// 学校管理者用 ユーザー一覧・作成 API
+// GET  /api/school-admin/users — 同一学校内のユーザー一覧を返す
+// POST /api/school-admin/users — ユーザーを 1 人または一括で追加する
+//   body.names（配列）があれば一括追加、なければ 1 人追加。
+//   ID は「学校 prefix + 8 桁連番」（startSeq 省略時は最小未使用番号）で自動採番。
+//   初期パスワードはユーザー ID と同一。
+//   作成できるロールは TEACHER / STUDENT のみ（SCHOOL_ADMIN 以上は別エンドポイント）。
+// ロール: SCHOOL_ADMIN / SERVER_ADMIN
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';

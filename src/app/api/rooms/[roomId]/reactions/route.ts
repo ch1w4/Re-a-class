@@ -1,3 +1,7 @@
+// リアクション送信 API
+// POST /api/rooms/[roomId]/reactions
+// ログイン済みの全ユーザーが送信可能。授業終了後は拒否。
+// type: "understood" | "confused" | "question" | "slow" | "fast"
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';

@@ -1,4 +1,11 @@
 'use client';
+// サーバー管理パネル (/admin)
+// ロール SERVER_ADMIN のみアクセス可能。他のロールは /home にリダイレクト。
+// 機能:
+//   - 学校一覧の表示（ユーザー数付き）
+//   - 新規学校の追加（学校名 + prefix）
+//   - 学校の削除（全ユーザー・全データを含む完全削除）
+//   - 学校管理者（SCHOOL_ADMIN）の新規作成
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';

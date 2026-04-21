@@ -1,3 +1,9 @@
+// 生徒チャット送信 API
+// POST /api/rooms/[roomId]/chat
+// 生徒が教師へ個別メッセージを送る。ロール: STUDENT のみ。
+// chatEnabled フラグが false の場合は拒否（教師がオン/オフを切り替える）。
+// OPENAI_API_KEY が設定されている場合、送信前に gpt-4o-mini でメッセージを
+// 丁寧な敬語に自動変換する（5 秒でタイムアウト・失敗時は原文をそのまま保存）。
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { prisma } from '@/lib/prisma';

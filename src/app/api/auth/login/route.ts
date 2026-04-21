@@ -1,3 +1,7 @@
+// ログイン API
+// POST /api/auth/login
+// userId + password を受け取り、認証成功なら session_id Cookie をセットして role を返す。
+// 初期パスワードはユーザー ID と同一（学校管理者が発行時に設定）。
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyPassword, createSession } from '@/lib/auth';

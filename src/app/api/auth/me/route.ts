@@ -1,3 +1,7 @@
+// ログイン中ユーザー情報取得 API
+// GET /api/auth/me
+// Cookie のセッションから現在のユーザー情報（ID・名前・ロール・学校）を返す。
+// フロントエンドが初回レンダリング時に呼び出してロールに応じた画面遷移を行う。
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionUser } from '@/lib/auth';
 

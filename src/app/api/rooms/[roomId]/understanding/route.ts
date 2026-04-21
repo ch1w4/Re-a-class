@@ -1,3 +1,12 @@
+// 理解度チェック API（生徒用）
+// GET  /api/rooms/[roomId]/understanding
+//   現在のチェックが active かどうか、自分がすでに回答したかを返す。
+//   active=true: notifiedAt が設定済みかつ talliedAt がまだの状態。
+// POST /api/rooms/[roomId]/understanding
+//   score（1〜4）と任意コメントを受け取って回答を保存する。二重回答は拒否。
+//   score 1=よく理解できた, 2=理解できた, 3=少し難しかった, 4=理解できなかった
+// ロール: GET = 全ログイン済みユーザー、POST = STUDENT のみ
+// チェックのスケジュール: 授業終了から 4 日後に cron で通知される。
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';

@@ -1,3 +1,10 @@
+// 音声書き起こし API
+// POST /api/rooms/[roomId]/transcribe
+// 録音した音声ファイル（multipart/form-data の "audio" フィールド）を
+// OpenAI Whisper (whisper-1) で日本語テキストに変換する。
+// 既存の transcript に追記する形で保存（複数回の録音に対応）。
+// ロール: TEACHER（自分のルームのみ）/ SCHOOL_ADMIN / SERVER_ADMIN
+// 環境変数 OPENAI_API_KEY が必要。
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { prisma } from '@/lib/prisma';

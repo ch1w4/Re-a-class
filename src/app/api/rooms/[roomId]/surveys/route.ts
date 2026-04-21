@@ -1,3 +1,8 @@
+// アンケート作成 API
+// POST /api/rooms/[roomId]/surveys
+// 質問文と選択肢（2 つ以上）を受け取り、アンケートを作成する。
+// 作成後は isOpen=true で投票受付開始。授業終了後は作成不可。
+// ロール: TEACHER（自分のルームのみ）/ SCHOOL_ADMIN / SERVER_ADMIN
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';

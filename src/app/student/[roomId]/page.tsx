@@ -1,4 +1,15 @@
 'use client';
+// 生徒用授業画面 (/student/[roomId])
+// ロール STUDENT のみアクセス可能。
+// 主な機能:
+//   - 5 種類のリアクション送信（理解した・わからない・質問あり・ゆっくり・速く）
+//   - 先生だけに届く個別チャット（chatEnabled=true のときのみ送信可能）
+//     → OpenAI gpt-4o-mini で自動的に丁寧な敬語に変換してから保存
+//   - アンケート回答・結果閲覧
+//   - 授業メモ（教師が書いた板書内容）の閲覧
+//   - 授業終了後: AI 要約・書き起こしの閲覧
+//   - 理解度チェック（授業終了 4 日後に通知 → スコア 1〜4 とコメントで回答）
+// 2 秒 polling でリアルタイム更新。参加登録（Enrollment）は入室時に自動実行。
 
 import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';

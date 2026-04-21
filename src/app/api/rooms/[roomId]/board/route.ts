@@ -1,3 +1,9 @@
+// 授業後の匿名掲示板 API
+// GET  /api/rooms/[roomId]/board — 投稿一覧を取得。授業終了後のみ閲覧可能。
+//   STUDENT/一般ユーザーは authorLabel に匿名ラベル（userId+roomId の SHA256 ハッシュ由来）を使用。
+//   SCHOOL_ADMIN/SERVER_ADMIN は実名を表示。
+// POST /api/rooms/[roomId]/board — 生徒が感想・質問を投稿する。授業終了後のみ。
+// ロール: GET = STUDENT / SCHOOL_ADMIN / SERVER_ADMIN、POST = STUDENT のみ
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';

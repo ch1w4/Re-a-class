@@ -1,3 +1,10 @@
+// 理解度チェック集計 cron エンドポイント
+// POST /api/cron/understanding-tally — x-cron-secret ヘッダーで認証
+// tallyAt が現在時刻以前で、まだ talliedAt がない UnderstandingCheck を集計する。
+// score 3〜4（「難しかった」「理解できなかった」）が回答者の 50% 超の場合、
+// gpt-4o-mini でコメントをまとめ、担当教師に「UNDERSTANDING_RESULT」通知を送信する。
+// 集計後は talliedAt を記録する。
+// サーバー側の crontab 等で 1 時間ごとに呼び出す想定。
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { prisma } from '@/lib/prisma';

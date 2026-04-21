@@ -1,3 +1,10 @@
+// 授業要約レポート生成 API
+// POST /api/rooms/[roomId]/summary
+// OpenAI gpt-4o-mini を使って授業要約レポートを Markdown 形式で自動生成し DB に保存する。
+// プロンプトには「音声書き起こし・リアクション集計・アンケート結果」を含める。
+// 生成内容: 授業概要・理解度分析・改善点
+// ロール: TEACHER（自分のルームのみ）/ SCHOOL_ADMIN / SERVER_ADMIN
+// 環境変数 OPENAI_API_KEY が必要（未設定なら 500 を返す）。
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { prisma } from '@/lib/prisma';

@@ -1,3 +1,8 @@
+// 通知一覧取得 API
+// GET /api/notifications
+// ログイン中のユーザー宛の通知を最新 50 件返す。
+// 通知タイプ: UNDERSTANDING_CHECK（理解度チェックのお知らせ）
+//             UNDERSTANDING_RESULT（教師向け理解度集計結果）
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';

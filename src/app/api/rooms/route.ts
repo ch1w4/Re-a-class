@@ -1,3 +1,9 @@
+// ルーム一覧取得・新規作成 API
+// POST /api/rooms — 教師が新しい授業ルームを作成する（ロール: TEACHER）
+// GET  /api/rooms — ロールによって返すデータが変わる
+//   TEACHER      : 自分が作成したルーム一覧
+//   STUDENT      : 自分が参加したルーム一覧（担当教師名付き）
+//   SCHOOL_ADMIN/SERVER_ADMIN : 同一学校内の全ルーム一覧
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';

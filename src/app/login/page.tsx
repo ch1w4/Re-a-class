@@ -1,4 +1,11 @@
 'use client';
+// ログインページ (/login)
+// ユーザー ID とパスワードを入力して /api/auth/login に POST する。
+// 認証成功後、ロールに応じてリダイレクト先が変わる:
+//   SERVER_ADMIN  → /admin（サーバー管理パネル）
+//   SCHOOL_ADMIN  → /school-admin（学校管理パネル）
+//   TEACHER/STUDENT → /home（メインホーム）
+// useSearchParams を使うため Suspense でラップしている。
 
 import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';

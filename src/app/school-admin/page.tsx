@@ -1,4 +1,12 @@
 'use client';
+// 学校管理パネル (/school-admin)
+// ロール SCHOOL_ADMIN のみアクセス可能。他のロールは /home にリダイレクト。
+// 機能:
+//   - ユーザー追加（1 人 or 一括）。ロール TEACHER / STUDENT を選択。
+//     開始 ID 番号を指定可能、省略時は最小未使用番号を自動採番。
+//     初期パスワードはユーザー ID と同一。
+//   - 教師・生徒の一覧表示とパスワードリセット・削除
+//   - 終了済み講義の掲示板へのリンク一覧
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
