@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
   const id = uuidv4().replace(/-/g, '').substring(0, 8).toUpperCase();
   const room = await prisma.room.create({
     data: { id, name, schoolId: user!.schoolId, teacherId: user!.id },
-    include: { messages: true, reactions: true, surveys: { include: { options: true } }, enrollments: true },
+    include: { reactions: true, surveys: { include: { options: true } }, enrollments: true },
   });
   return NextResponse.json(room, { status: 201 });
 }
