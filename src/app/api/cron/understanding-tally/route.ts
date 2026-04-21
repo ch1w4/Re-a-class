@@ -18,6 +18,7 @@ export async function POST(request: NextRequest) {
   }
 
   const now = new Date();
+  // tallyAt <= 現在 かつ まだ集計していない（talliedAt=null）かつ 通知済み（notifiedAt!=null）のチェックを取得
   const checks = await prisma.understandingCheck.findMany({
     where: { tallyAt: { lte: now }, talliedAt: null, notifiedAt: { not: null } },
     include: {
@@ -29,15 +30,19 @@ export async function POST(request: NextRequest) {
   let tallied = 0;
   for (const check of checks) {
     const total = check.responses.length;
+
+    // 回答者ゼロの場合は集計せずに talliedAt を記録して終了
     if (total === 0) {
       await prisma.understandingCheck.update({ where: { id: check.id }, data: { talliedAt: now } });
       continue;
     }
 
+    // score >= 3（あまり理解できなかった / 全然理解できなかった）の割合を計算
     const poorCount = check.responses.filter((r) => r.score >= 3).length;
-    const majority = poorCount / total > 0.5;
+    const majority = poorCount / total > 0.5; // 50% 超なら教師に通知する
 
     if (majority && process.env.OPENAI_API_KEY) {
+      // コメントが空でない回答のみ抽出してプロンプトに含める
       const comments = check.responses
         .filter((r) => r.comment.trim())
         .map((r) => `- ${r.comment}`)
@@ -55,10 +60,11 @@ export async function POST(request: NextRequest) {
           max_tokens: 300,
         });
         aiSummary = res.choices[0].message.content ?? '';
-      } catch { /* fallback */ }
+      } catch { /* AI 生成失敗時は aiSummary='' のままにして通知本文から省略 */ }
 
       const body = `「${check.room.name}」の理解度チェックで、${total}人中${poorCount}人が理解できなかったと回答しました。${aiSummary ? `\n\n${aiSummary}` : ''}`;
 
+      // 担当教師へ UNDERSTANDING_RESULT 通知を送信（教師の授業画面へのリンク付き）
       await prisma.notification.create({
         data: {
           userId: check.room.teacher.id,
@@ -70,6 +76,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // 集計完了を記録（二重集計防止）
     await prisma.understandingCheck.update({ where: { id: check.id }, data: { talliedAt: now } });
     tallied++;
   }

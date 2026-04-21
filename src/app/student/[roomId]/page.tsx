@@ -15,6 +15,7 @@ import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 
 type ReactionType = 'understood' | 'confused' | 'question' | 'slow' | 'fast';
+// タブ ID の型: 授業中は reaction/chat/survey/summary、終了後は board が追加、理解度チェック期間中は understanding が追加
 type Tab = 'reaction' | 'chat' | 'survey' | 'summary' | 'board' | 'understanding';
 
 interface Me { id: string; displayName: string; role: string }
@@ -29,6 +30,7 @@ interface Room {
 }
 interface BoardPost { id: string; content: string; authorLabel: string; createdAt: string }
 
+// リアクションボタンの定義: 通常状態(bg)とタップ時のハイライト状態(active)のスタイルを持つ
 const REACTION_BUTTONS: { type: ReactionType; label: string; emoji: string; bg: string; active: string }[] = [
   { type: 'understood', label: '理解した',       emoji: '👍', bg: 'bg-green-100 border-green-300 text-green-700',    active: 'bg-green-500 border-green-600 text-white' },
   { type: 'confused',   label: 'わからない',     emoji: '🤔', bg: 'bg-red-100 border-red-300 text-red-700',          active: 'bg-red-500 border-red-600 text-white' },
@@ -42,49 +44,66 @@ function StudentRoom() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const roomId = params.roomId as string;
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null); // チャット末尾へ自動スクロールするための参照
 
-  const [me, setMe] = useState<Me | null>(null);
-  const [room, setRoom] = useState<Room | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [tab, setTab] = useState<Tab>('reaction');
-  const [message, setMessage] = useState('');
-  const [sending, setSending] = useState(false);
+  // --- 基本状態 ---
+  const [me, setMe] = useState<Me | null>(null);              // ログイン中の生徒情報
+  const [room, setRoom] = useState<Room | null>(null);        // 授業データ（2 秒ポーリングで更新）
+  const [loading, setLoading] = useState(true);               // 初回ロード中
+  const [error, setError] = useState('');                     // エラーメッセージ
+  const [tab, setTab] = useState<Tab>('reaction');            // 現在選択中のタブ
+  const [toast, setToast] = useState('');                     // トースト通知のメッセージ（2 秒で消える）
+
+  // --- チャット関連 ---
+  const [message, setMessage] = useState('');       // 入力中のメッセージテキスト
+  const [sending, setSending] = useState(false);    // 送信中フラグ（二重送信防止）
+
+  // --- リアクション関連 ---
+  // sentReaction: 直前に送ったリアクション種別。1.5 秒間ハイライト表示して null に戻す
   const [sentReaction, setSentReaction] = useState<ReactionType | null>(null);
+
+  // --- アンケート関連 ---
+  // answeredSurveys: このセッションで回答済みのアンケートID集合（二重回答防止のためローカル管理）
   const [answeredSurveys, setAnsweredSurveys] = useState<Set<string>>(new Set());
-  const [toast, setToast] = useState('');
 
-  const [boardPosts, setBoardPosts] = useState<BoardPost[]>([]);
-  const [boardMessage, setBoardMessage] = useState('');
-  const [boardSending, setBoardSending] = useState(false);
-  const [boardLoaded, setBoardLoaded] = useState(false);
+  // --- 掲示板関連 ---
+  const [boardPosts, setBoardPosts] = useState<BoardPost[]>([]);  // 掲示板の投稿一覧
+  const [boardMessage, setBoardMessage] = useState('');            // 投稿入力テキスト
+  const [boardSending, setBoardSending] = useState(false);         // 投稿中フラグ（二重投稿防止）
+  const [boardLoaded, setBoardLoaded] = useState(false);           // 掲示板データ取得済みフラグ（タブ切り替え時に1回だけ取得）
 
-  const [understandingActive, setUnderstandingActive] = useState(false);
-  const [understandingAnswered, setUnderstandingAnswered] = useState(false);
-  const [understandingScore, setUnderstandingScore] = useState<number | null>(null);
-  const [understandingComment, setUnderstandingComment] = useState('');
-  const [understandingSubmitting, setUnderstandingSubmitting] = useState(false);
+  // --- 理解度チェック関連 ---
+  const [understandingActive, setUnderstandingActive] = useState(false);     // チェック受付中かどうか（notifiedAt あり & talliedAt なし）
+  const [understandingAnswered, setUnderstandingAnswered] = useState(false);  // 自分がすでに回答済みかどうか
+  const [understandingScore, setUnderstandingScore] = useState<number | null>(null); // 選択したスコア（1〜4）
+  const [understandingComment, setUnderstandingComment] = useState('');      // 入力したコメント（任意）
+  const [understandingSubmitting, setUnderstandingSubmitting] = useState(false); // 回答送信中フラグ
 
+  // 2 秒で消えるトースト通知を表示する
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(''), 2000);
   };
 
+  // マウント時: ログインチェック + 入室登録（Enrollment の upsert）を行う。
+  // enroll は idempotent なので複数回呼んでも安全。
   useEffect(() => {
     fetch('/api/auth/me').then(async (res) => {
       if (res.status === 401) { router.replace('/login'); return; }
       const data = await res.json();
       setMe(data);
+      // 入室を記録する（学習履歴と理解度チェック対象の決定に使われる）
       await fetch(`/api/rooms/${roomId}/enroll`, { method: 'POST' });
     });
   }, [roomId, router]);
 
+  // URL クエリパラメータ ?tab=understanding などでタブを指定できる（通知リンクから遷移する場合に使用）
   useEffect(() => {
     const t = searchParams.get('tab') as Tab | null;
     if (t) setTab(t);
   }, [searchParams]);
 
+  // ルームデータを取得する（2 秒ポーリングで繰り返し呼ばれる）
   const fetchRoom = useCallback(async () => {
     try {
       const res = await fetch(`/api/rooms/${roomId}`);
@@ -98,6 +117,7 @@ function StudentRoom() {
     }
   }, [roomId, router]);
 
+  // 理解度チェックのアクティブ状態と回答済み状態を取得する
   const fetchUnderstanding = useCallback(async () => {
     try {
       const res = await fetch(`/api/rooms/${roomId}/understanding`);
@@ -106,23 +126,28 @@ function StudentRoom() {
         setUnderstandingActive(data.active);
         setUnderstandingAnswered(data.answered);
       }
-    } catch { /* ignore */ }
+    } catch { /* 失敗しても通常フローには影響しない */ }
   }, [roomId]);
 
+  // me が設定された（ログイン確認済み）タイミングで初回データ取得を実行
   useEffect(() => {
     if (me) { fetchRoom(); fetchUnderstanding(); }
   }, [me, fetchRoom, fetchUnderstanding]);
 
+  // 2 秒ごとにポーリングを開始する。アンマウント時にクリアして無限ループを防ぐ。
   useEffect(() => {
     if (!me) return;
     const iv = setInterval(() => { fetchRoom(); fetchUnderstanding(); }, 2000);
     return () => clearInterval(iv);
   }, [me, fetchRoom, fetchUnderstanding]);
 
+  // チャットタブを開いているときに新しいメッセージが届いたら末尾へスクロールする
   useEffect(() => {
     if (tab === 'chat') chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [room?.messages, tab]);
 
+  // 掲示板タブを開いたとき、まだデータ未取得であれば一度だけ投稿一覧を取得する
+  // ポーリングではなく初回のみ取得（掲示板は授業終了後で更新頻度が低いため）
   useEffect(() => {
     if (tab === 'board' && !boardLoaded) {
       fetch(`/api/rooms/${roomId}/board`).then(async (res) => {
@@ -131,6 +156,8 @@ function StudentRoom() {
     }
   }, [tab, boardLoaded, roomId]);
 
+  // リアクションを送信する。授業終了後はブロック。
+  // 送信後 1.5 秒間ボタンをハイライト表示してフィードバックを与える。
   const sendReaction = async (type: ReactionType) => {
     if (room?.endedAt) return;
     setSentReaction(type);
@@ -146,6 +173,9 @@ function StudentRoom() {
     }
   };
 
+  // チャットメッセージを送信する。
+  // chatEnabled=false または授業終了後はブロック。
+  // 送信後は入力欄をクリアして最新メッセージを反映するために fetchRoom を呼ぶ。
   const sendMessage = async () => {
     if (!message.trim() || sending || !room?.chatEnabled || room?.endedAt) return;
     setSending(true);
@@ -161,6 +191,9 @@ function StudentRoom() {
     }
   };
 
+  // アンケートに回答する。
+  // answeredSurveys にすでに存在すれば二重回答を防ぐ。
+  // 楽観的 UI: API レスポンスを待たずに先に answeredSurveys を更新して UX を向上させる。
   const answerSurvey = async (surveyId: string, optionId: string) => {
     if (answeredSurveys.has(surveyId) || room?.endedAt) return;
     setAnsweredSurveys((prev) => { const next = new Set(prev); next.add(surveyId); return next; });
@@ -169,10 +202,12 @@ function StudentRoom() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ optionId }),
     });
-    fetchRoom();
+    fetchRoom(); // 投票数をリアルタイムで反映
     showToast('回答しました！');
   };
 
+  // 匿名掲示板への投稿を送信する。
+  // 送信成功後は投稿をローカル state に追加して即座に表示する（再フェッチ不要）。
   const sendBoardPost = async () => {
     if (!boardMessage.trim() || boardSending) return;
     setBoardSending(true);
@@ -193,6 +228,8 @@ function StudentRoom() {
     }
   };
 
+  // 理解度チェックの回答を送信する。スコア（1〜4）は必須。
+  // 送信成功後は answered フラグを立てて回答済み画面に切り替える。
   const submitUnderstanding = async () => {
     if (!understandingScore || understandingSubmitting) return;
     setUnderstandingSubmitting(true);
@@ -229,10 +266,12 @@ function StudentRoom() {
     </div>
   );
 
-  const isEnded = !!room.endedAt;
+  const isEnded = !!room.endedAt; // 授業が終了しているかどうか（true なら入力系を全ブロック）
+  // 自分が送ったメッセージのみ抽出してチャット欄に表示（他の生徒のメッセージは見えない）
   const myMessages = room.messages.filter((m) => m.userId === me.id);
-  const openSurveys = room.surveys.filter((s) => s.isOpen);
+  const openSurveys = room.surveys.filter((s) => s.isOpen); // 受付中のアンケート（バッジ表示の判定に使用）
 
+  // タブリスト: 授業終了後に board タブ、チェック期間中に understanding タブが追加される
   const tabs: { id: Tab; label: string; emoji: string }[] = [
     { id: 'reaction', label: 'リアクション', emoji: '👍' },
     { id: 'chat',     label: 'チャット',     emoji: '💬' },
@@ -244,12 +283,14 @@ function StudentRoom() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col max-w-lg mx-auto">
+      {/* トースト通知: 画面上部中央に 2 秒間表示 */}
       {toast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-gray-800 text-white text-sm px-4 py-2 rounded-full shadow-lg">
           {toast}
         </div>
       )}
 
+      {/* ヘッダー: 授業終了後はグレーにして視覚的に終了状態を示す */}
       <header className={`text-white px-5 py-4 shadow-lg ${isEnded ? 'bg-gray-600' : 'bg-teal-600'}`}>
         <div className="flex items-center justify-between">
           <button onClick={() => router.push('/home')} className="text-teal-200 hover:text-white text-sm font-semibold">
@@ -262,6 +303,7 @@ function StudentRoom() {
         </div>
       </header>
 
+      {/* 授業終了バナー: 終了日時を表示 */}
       {isEnded && (
         <div className="bg-gray-100 border-b border-gray-200 text-center py-3 px-4">
           <p className="text-gray-600 font-semibold text-sm">この授業は終了しました</p>
@@ -271,8 +313,10 @@ function StudentRoom() {
         </div>
       )}
 
+      {/* タブナビゲーション: スクロール可能（タブが増えても対応できる） */}
       <div className="bg-white border-b border-gray-200 flex overflow-x-auto">
         {tabs.map((t) => {
+          // 未回答の受付中アンケートがある場合、またはアクティブな理解度チェックが未回答の場合は赤バッジを表示
           const hasBadge =
             (t.id === 'survey' && openSurveys.length > 0 && !openSurveys.every((s) => answeredSurveys.has(s.id)) && !isEnded) ||
             (t.id === 'understanding' && understandingActive && !understandingAnswered);
@@ -286,6 +330,7 @@ function StudentRoom() {
             >
               <span className="block text-lg leading-none mb-0.5">{t.emoji}</span>
               {t.label}
+              {/* 未回答バッジ（赤い点） */}
               {hasBadge && <span className="absolute top-1 right-2 w-2 h-2 bg-red-500 rounded-full"></span>}
             </button>
           );
@@ -294,9 +339,11 @@ function StudentRoom() {
 
       <div className="flex-1 overflow-y-auto p-4">
 
+        {/* ===== リアクションタブ ===== */}
         {tab === 'reaction' && (
           <div>
             {isEnded ? (
+              // 授業終了後はリアクション送信不可
               <div className="text-center py-16">
                 <div className="text-5xl mb-4">🏁</div>
                 <p className="text-gray-500 font-semibold">授業は終了しました</p>
@@ -313,6 +360,7 @@ function StudentRoom() {
                       className={`border-2 rounded-2xl p-5 flex flex-col items-center gap-2 font-semibold text-sm transition-all active:scale-95 ${
                         sentReaction === btn.type ? btn.active : btn.bg
                       } ${btn.type === 'understood' ? 'col-span-2' : ''}`}
+                      // 「理解した」ボタンは 2 カラム幅で強調表示
                     >
                       <span className="text-4xl">{btn.emoji}</span>
                       <span>{btn.label}</span>
@@ -325,14 +373,17 @@ function StudentRoom() {
           </div>
         )}
 
+        {/* ===== チャットタブ ===== */}
         {tab === 'chat' && (
           <div className="flex flex-col h-full">
             {isEnded ? (
+              // 授業終了後はチャット送信不可
               <div className="text-center py-16">
                 <div className="text-5xl mb-4">🔒</div>
                 <p className="text-gray-500 font-semibold">チャットは終了しました</p>
               </div>
             ) : !room.chatEnabled ? (
+              // 教師がチャットを閉鎖中の場合
               <div className="text-center py-16">
                 <div className="text-5xl mb-4">🔒</div>
                 <p className="text-gray-500 font-semibold">チャットは閉鎖中です</p>
@@ -343,6 +394,7 @@ function StudentRoom() {
                 <div className="bg-teal-50 border border-teal-200 rounded-xl px-4 py-3 mb-4 text-xs text-teal-700">
                   💬 メッセージは<span className="font-bold">先生だけ</span>に届きます。他の生徒には見えません。
                 </div>
+                {/* 自分のメッセージのみ表示（他の生徒のメッセージは表示しない） */}
                 <div className="space-y-2 mb-4 min-h-40">
                   {myMessages.length === 0 ? (
                     <div className="text-center py-8">
@@ -352,6 +404,7 @@ function StudentRoom() {
                   ) : (
                     myMessages.map((m) => (
                       <div key={m.id} className="flex justify-end">
+                        {/* 吹き出しスタイルのメッセージバブル（右揃え） */}
                         <div className="bg-teal-500 text-white rounded-2xl rounded-br-sm px-4 py-3 max-w-xs shadow-sm">
                           <p className="text-sm">{m.content}</p>
                           <p className="text-xs text-teal-200 mt-1 text-right">
@@ -361,8 +414,10 @@ function StudentRoom() {
                       </div>
                     ))
                   )}
+                  {/* スクロール末尾のアンカー（新メッセージ到着時に自動スクロールするため） */}
                   <div ref={chatEndRef} />
                 </div>
+                {/* メッセージ入力エリア: sticky で常に画面下部に表示 */}
                 <div className="flex gap-2 sticky bottom-0 bg-gray-50 py-2">
                   <input
                     type="text"
@@ -385,6 +440,7 @@ function StudentRoom() {
           </div>
         )}
 
+        {/* ===== アンケートタブ ===== */}
         {tab === 'survey' && (
           <div className="space-y-4">
             {room.surveys.length === 0 ? (
@@ -394,6 +450,7 @@ function StudentRoom() {
                 <p className="text-gray-400 text-sm mt-2">先生がアンケートを作成すると表示されます</p>
               </div>
             ) : (
+              // 最新のアンケートが上に来るよう逆順表示
               [...room.surveys].reverse().map((survey) => {
                 const answered = answeredSurveys.has(survey.id);
                 const total = survey.options.reduce((sum, o) => sum + o.votes, 0);
@@ -401,12 +458,14 @@ function StudentRoom() {
                   <div key={survey.id}
                     className={`bg-white rounded-2xl p-5 shadow-sm border ${survey.isOpen && !isEnded ? 'border-orange-200' : 'border-gray-200'}`}>
                     <div className="flex items-center gap-2 mb-3">
+                      {/* 受付中/終了バッジ */}
                       {survey.isOpen && !isEnded
                         ? <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-semibold">受付中</span>
                         : <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-semibold">終了</span>
                       }
                     </div>
                     <p className="font-semibold text-gray-800 mb-3">{survey.question}</p>
+                    {/* 未回答かつ受付中かつ授業中: 選択肢ボタンを表示 */}
                     {survey.isOpen && !answered && !isEnded ? (
                       <div className="space-y-2">
                         {survey.options.map((opt) => (
@@ -417,6 +476,7 @@ function StudentRoom() {
                         ))}
                       </div>
                     ) : (
+                      // 回答済み・終了・授業終了後: 結果グラフを表示
                       <div className="space-y-2">
                         {answered && survey.isOpen && !isEnded && <p className="text-xs text-teal-600 font-semibold mb-2">✓ 回答済み</p>}
                         {survey.options.map((opt) => {
@@ -443,11 +503,13 @@ function StudentRoom() {
           </div>
         )}
 
+        {/* ===== 要約タブ: 教師が生成した AI 要約を閲覧 ===== */}
         {tab === 'summary' && (
           <div>
             {room.summary ? (
               <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
                 <h2 className="text-base font-bold text-gray-700 mb-3">授業要約</h2>
+                {/* pre タグで Markdown のインデント・改行を保持して表示 */}
                 <pre className="text-xs text-gray-600 whitespace-pre-wrap leading-relaxed">{room.summary}</pre>
               </div>
             ) : (
@@ -460,6 +522,7 @@ function StudentRoom() {
           </div>
         )}
 
+        {/* ===== 掲示板タブ: 授業終了後のみ表示される匿名掲示板 ===== */}
         {tab === 'board' && (
           <div>
             <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3 mb-4 text-xs text-indigo-700">
@@ -475,6 +538,7 @@ function StudentRoom() {
                 boardPosts.map((p) => (
                   <div key={p.id} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
                     <div className="flex items-center justify-between mb-2">
+                      {/* authorLabel は SHA256(userId+roomId) から生成された「生徒X」形式の匿名ラベル */}
                       <span className="text-xs font-semibold text-indigo-600">{p.authorLabel}</span>
                       <span className="text-xs text-gray-400">{new Date(p.createdAt).toLocaleString('ja-JP')}</span>
                     </div>
@@ -483,6 +547,7 @@ function StudentRoom() {
                 ))
               )}
             </div>
+            {/* 投稿フォーム: sticky で常に画面下部に表示 */}
             <div className="flex gap-2 sticky bottom-0 bg-gray-50 py-2">
               <input
                 type="text"
@@ -503,18 +568,22 @@ function StudentRoom() {
           </div>
         )}
 
+        {/* ===== 理解度チェックタブ: 授業終了 4 日後に通知→3 日間回答受付 ===== */}
         {tab === 'understanding' && (
           <div>
             {understandingAnswered ? (
+              // 回答済み画面
               <div className="text-center py-16">
                 <div className="text-5xl mb-4">✅</div>
                 <p className="text-gray-600 font-semibold">回答済みです</p>
                 <p className="text-gray-400 text-sm mt-2">ご協力ありがとうございました</p>
               </div>
             ) : (
+              // 回答フォーム: スコア選択（1〜4）+ 任意コメント
               <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
                 <h2 className="text-base font-bold text-gray-700 mb-1">理解度チェック</h2>
                 <p className="text-xs text-gray-400 mb-5">「{room.name}」の内容はどのくらい理解できましたか？</p>
+                {/* スコア選択ボタン: 選択中はそれぞれの色でハイライト */}
                 <div className="space-y-3 mb-6">
                   {[
                     { score: 1, label: 'よく理解できた',         emoji: '😄', color: 'border-green-400 bg-green-50 text-green-700' },
@@ -534,6 +603,7 @@ function StudentRoom() {
                     </button>
                   ))}
                 </div>
+                {/* 任意コメント: score 3〜4 の生徒のコメントは AI が集計して教師に通知される */}
                 <label className="block text-sm font-semibold text-gray-600 mb-2">コメント（任意）</label>
                 <textarea
                   value={understandingComment}
@@ -542,6 +612,7 @@ function StudentRoom() {
                   rows={3}
                   className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none mb-4"
                 />
+                {/* 送信ボタン: スコアが未選択のときは無効 */}
                 <button
                   onClick={submitUnderstanding}
                   disabled={!understandingScore || understandingSubmitting}
@@ -558,6 +629,7 @@ function StudentRoom() {
   );
 }
 
+// useSearchParams を使うコンポーネントは Suspense でラップが必要（Next.js 14 の制約）
 export default function StudentRoomPage() {
   return (
     <Suspense>

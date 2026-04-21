@@ -9,6 +9,7 @@ import { requireAuth } from '@/lib/requireAuth';
 
 export const dynamic = 'force-dynamic';
 
+// GET でルームデータを取得する際に常に含めるリレーション定義
 const includeAll = {
   messages: { orderBy: { timestamp: 'asc' as const }, include: { user: { select: { displayName: true } } } },
   reactions: { orderBy: { timestamp: 'asc' as const } },
@@ -21,6 +22,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { roomId: string } }
 ) {
+  // 全ログイン済みユーザーが参照可能（ロール制限なし）
   const { error } = await requireAuth(request);
   if (error) return error;
 
@@ -38,9 +40,11 @@ export async function DELETE(
 
   const room = await prisma.room.findUnique({ where: { id: params.roomId } });
   if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+  // TEACHER は自分が作成したルームのみ終了できる
   if (user!.role === 'TEACHER' && room.teacherId !== user!.id) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
+  // 既に終了済みのルームを二重終了しようとしても弾く
   if (room.endedAt) return NextResponse.json({ error: 'Already ended' }, { status: 400 });
 
   const endedAt = new Date();
@@ -50,10 +54,11 @@ export async function DELETE(
     include: includeAll,
   });
 
-  // 理解度チェックをスケジュール（4日後）
+  // 授業終了と同時に理解度チェックを 4 日後にスケジュールする。
+  // upsert を使うことで cleanup cron が終了した場合との重複作成を防ぐ。
   await prisma.understandingCheck.upsert({
     where: { roomId: params.roomId },
-    update: {},
+    update: {}, // 既に存在する場合は何も変更しない
     create: {
       roomId: params.roomId,
       scheduledAt: new Date(endedAt.getTime() + 4 * 24 * 60 * 60 * 1000),

@@ -18,20 +18,23 @@ export default function BoardPage() {
   const router = useRouter();
   const roomId = params.roomId as string;
 
-  const [me, setMe] = useState<Me | null>(null);
-  const [room, setRoom] = useState<Room | null>(null);
-  const [posts, setPosts] = useState<BoardPost[]>([]);
-  const [message, setMessage] = useState('');
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [toast, setToast] = useState('');
+  const [me, setMe] = useState<Me | null>(null);           // ログイン中ユーザー情報（ロール判定に使用）
+  const [room, setRoom] = useState<Room | null>(null);     // 授業情報（名前・教師名の表示用）
+  const [posts, setPosts] = useState<BoardPost[]>([]);     // 掲示板の投稿一覧
+  const [message, setMessage] = useState('');              // 投稿入力テキスト
+  const [sending, setSending] = useState(false);           // 投稿送信中フラグ（二重投稿防止）
+  const [error, setError] = useState('');                  // アクセス制限やルーム未存在のエラーメッセージ
+  const [loading, setLoading] = useState(true);            // 初回ロード中フラグ
+  const [toast, setToast] = useState('');                  // トースト通知（2 秒で消える）
 
+  // 2 秒間トーストを表示する
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(''), 2000);
   };
 
+  // 掲示板の投稿一覧を取得する。
+  // 授業終了前は 403、ルーム未存在は 404 を返す。
   const fetchPosts = useCallback(async () => {
     const res = await fetch(`/api/rooms/${roomId}/board`);
     if (res.ok) setPosts(await res.json());
@@ -39,12 +42,14 @@ export default function BoardPage() {
     else if (res.status === 404) setError('ルームが見つかりません');
   }, [roomId]);
 
+  // マウント時: ログイン確認 → TEACHER はアクセス拒否 → ルーム情報・投稿一覧を取得
   useEffect(() => {
     (async () => {
       const meRes = await fetch('/api/auth/me');
       if (!meRes.ok) { router.replace('/login'); return; }
       const meData = await meRes.json();
 
+      // 教師はこのページにアクセスできない（専用の授業画面を使うため）
       if (meData.role === 'TEACHER') {
         setError('掲示板は生徒・管理者のみ閲覧できます');
         setLoading(false);
@@ -53,6 +58,7 @@ export default function BoardPage() {
 
       setMe(meData);
 
+      // ヘッダーに授業名・教師名を表示するためにルーム情報を取得
       const roomRes = await fetch(`/api/rooms/${roomId}`);
       if (roomRes.ok) setRoom(await roomRes.json());
 
@@ -61,6 +67,8 @@ export default function BoardPage() {
     })();
   }, [roomId, router, fetchPosts]);
 
+  // 掲示板に投稿する。
+  // 成功後はローカル state に追加して即時表示（再フェッチ不要）。
   const sendPost = async () => {
     if (!message.trim() || sending) return;
     setSending(true);
@@ -72,7 +80,7 @@ export default function BoardPage() {
       });
       if (res.ok) {
         const post = await res.json();
-        setPosts((prev) => [...prev, post]);
+        setPosts((prev) => [...prev, post]); // ローカル state に追加して即時表示
         setMessage('');
         showToast('投稿しました！');
       } else {
@@ -101,16 +109,19 @@ export default function BoardPage() {
   );
 
   const isStudent = me?.role === 'STUDENT';
+  // 管理者モード: 投稿者の実名を表示する（通常は匿名ラベル）
   const isAdmin = me?.role === 'SCHOOL_ADMIN' || me?.role === 'SERVER_ADMIN';
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col max-w-2xl mx-auto">
+      {/* トースト通知 */}
       {toast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-gray-800 text-white text-sm px-4 py-2 rounded-full shadow-lg">
           {toast}
         </div>
       )}
 
+      {/* ヘッダー: 授業名・教師名・管理者モードバッジを表示 */}
       <header className="bg-indigo-600 text-white px-5 py-4 shadow-lg sticky top-0 z-10">
         <div className="flex items-center justify-between">
           <button onClick={() => router.push('/home')} className="text-indigo-200 hover:text-white text-sm font-semibold">
@@ -120,6 +131,7 @@ export default function BoardPage() {
             <p className="font-semibold">{room?.name ?? roomId}</p>
             <p className="text-indigo-200 text-xs">
               {room?.teacher?.displayName} 先生 · 匿名掲示板
+              {/* 管理者には実名表示中であることを示すバッジを表示 */}
               {isAdmin && <span className="ml-1 bg-indigo-800 px-1.5 py-0.5 rounded text-indigo-200">管理者モード</span>}
             </p>
           </div>
@@ -127,12 +139,14 @@ export default function BoardPage() {
       </header>
 
       <div className="flex-1 overflow-y-auto p-4">
+        {/* 匿名モード / 管理者モードの説明バナー */}
         <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3 mb-4 text-xs text-indigo-700">
           {isAdmin
             ? '📋 管理者モードです。投稿者の実名が表示されています。'
             : '📌 匿名掲示板です。名前は他の人に見えません。'}
         </div>
 
+        {/* 投稿一覧 */}
         <div className="space-y-3 mb-4">
           {posts.length === 0 ? (
             <div className="text-center py-16">
@@ -144,6 +158,7 @@ export default function BoardPage() {
             posts.map((p) => (
               <div key={p.id} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
                 <div className="flex items-center justify-between mb-2">
+                  {/* 管理者は実名（gray）、生徒は匿名ラベル（indigo）で表示 */}
                   <span className={`text-xs font-semibold ${isAdmin ? 'text-gray-700' : 'text-indigo-600'}`}>
                     {p.authorLabel}
                   </span>
@@ -158,6 +173,7 @@ export default function BoardPage() {
         </div>
       </div>
 
+      {/* 生徒のみ投稿フォームを表示（管理者は閲覧のみ） */}
       {isStudent && (
         <div className="bg-white border-t border-gray-200 p-4 flex gap-2">
           <input
@@ -178,6 +194,7 @@ export default function BoardPage() {
         </div>
       )}
 
+      {/* 管理者向けフッター: 投稿件数と操作不可の案内 */}
       {isAdmin && posts.length > 0 && (
         <div className="bg-white border-t border-gray-200 p-4 text-center text-xs text-gray-400">
           {posts.length}件の投稿 · 管理者は投稿できません

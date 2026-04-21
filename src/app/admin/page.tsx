@@ -14,14 +14,20 @@ interface School { id: string; name: string; prefix: string; createdAt: string; 
 
 export default function AdminPage() {
   const router = useRouter();
-  const [schools, setSchools] = useState<School[]>([]);
-  const [name, setName] = useState('');
-  const [prefix, setPrefix] = useState('');
-  const [adminName, setAdminName] = useState('');
-  const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [schools, setSchools] = useState<School[]>([]); // 全学校一覧（ユーザー数付き）
 
+  // 学校追加フォームの状態
+  const [name, setName] = useState('');     // 学校名
+  const [prefix, setPrefix] = useState(''); // ユーザー ID 先頭の prefix（例: "A" → "A00000001"）
+
+  // 管理者追加モーダルの状態
+  const [adminName, setAdminName] = useState('');               // 作成する管理者の氏名
+  const [selectedSchool, setSelectedSchool] = useState<School | null>(null); // 対象の学校（nullならモーダル非表示）
+
+  const [error, setError] = useState('');      // フォームエラーメッセージ
+  const [loading, setLoading] = useState(false); // API 呼び出し中フラグ
+
+  // マウント時: ロール確認（SERVER_ADMIN 以外は /home へリダイレクト）
   useEffect(() => {
     fetch('/api/auth/me').then(async (res) => {
       if (!res.ok) { router.replace('/login'); return; }
@@ -30,6 +36,7 @@ export default function AdminPage() {
     });
   }, [router]);
 
+  // 全学校一覧を取得する（追加・削除後に再呼び出し）
   const fetchSchools = useCallback(async () => {
     const res = await fetch('/api/server-admin/schools');
     if (res.ok) setSchools(await res.json());
@@ -37,6 +44,7 @@ export default function AdminPage() {
 
   useEffect(() => { fetchSchools(); }, [fetchSchools]);
 
+  // 新しい学校を作成する
   const createSchool = async () => {
     if (!name.trim() || !prefix.trim()) return;
     setLoading(true); setError('');
@@ -46,16 +54,21 @@ export default function AdminPage() {
       body: JSON.stringify({ name, prefix }),
     });
     const data = await res.json();
-    if (!res.ok) { setError(data.error); } else { setName(''); setPrefix(''); fetchSchools(); }
+    if (!res.ok) { setError(data.error); } else {
+      setName(''); setPrefix('');
+      fetchSchools();
+    }
     setLoading(false);
   };
 
+  // 学校を削除する（全ユーザー・全授業データを含む完全削除）
   const deleteSchool = async (id: string) => {
     if (!confirm('この学校を削除しますか？すべてのユーザーとデータが削除されます。')) return;
     await fetch(`/api/server-admin/schools/${id}`, { method: 'DELETE' });
     fetchSchools();
   };
 
+  // 選択した学校に SCHOOL_ADMIN ユーザーを作成する
   const createAdmin = async () => {
     if (!selectedSchool || !adminName.trim()) return;
     setLoading(true); setError('');
@@ -66,8 +79,10 @@ export default function AdminPage() {
     });
     const data = await res.json();
     if (!res.ok) { setError(data.error); } else {
+      // 作成した ID と初期パスワード（= ID）を通知
       alert(`学校管理者を作成しました\nID: ${data.id}\n初期パスワード: ${data.id}`);
-      setAdminName(''); setSelectedSchool(null); fetchSchools();
+      setAdminName(''); setSelectedSchool(null);
+      fetchSchools();
     }
     setLoading(false);
   };
@@ -85,6 +100,8 @@ export default function AdminPage() {
       </header>
 
       <div className="max-w-4xl mx-auto p-6 space-y-8">
+
+        {/* 学校一覧テーブル: 学校名・prefix・ユーザー数・操作ボタン */}
         <section className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
           <h2 className="text-lg font-bold text-gray-700 mb-4">学校一覧</h2>
           {schools.length === 0 ? (
@@ -105,6 +122,7 @@ export default function AdminPage() {
                     <td className="py-3">{s._count.users}人</td>
                     <td className="py-3">
                       <div className="flex gap-2">
+                        {/* 管理者追加ボタン: 押すとモーダルが開く */}
                         <button onClick={() => setSelectedSchool(s)}
                           className="text-xs bg-teal-100 text-teal-700 px-2 py-1 rounded-lg hover:bg-teal-200 transition">
                           管理者を追加
@@ -122,6 +140,7 @@ export default function AdminPage() {
           )}
         </section>
 
+        {/* 学校追加フォーム: 学校名と prefix を入力 */}
         <section className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
           <h2 className="text-lg font-bold text-gray-700 mb-4">学校を追加</h2>
           <div className="grid grid-cols-2 gap-3 mb-3">
@@ -132,10 +151,12 @@ export default function AdminPage() {
             </div>
             <div>
               <label className="block text-sm text-gray-600 mb-1">Prefix（英数字）</label>
+              {/* prefix は大文字に強制変換 */}
               <input value={prefix} onChange={(e) => setPrefix(e.target.value.toUpperCase())} placeholder="A"
                 className="w-full border rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-400" />
             </div>
           </div>
+          {/* prefix のプレビュー: 入力中にユーザー ID 形式を確認できる */}
           <p className="text-xs text-gray-400 mb-3">ユーザーIDは <span className="font-mono">{prefix || 'PREFIX'}00000001</span> から始まります</p>
           {error && <p className="text-red-500 text-sm mb-2">{error}</p>}
           <button onClick={createSchool} disabled={loading || !name.trim() || !prefix.trim()}
@@ -145,6 +166,7 @@ export default function AdminPage() {
         </section>
       </div>
 
+      {/* 学校管理者作成モーダル: selectedSchool が非 null のときに表示 */}
       {selectedSchool && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl p-6 shadow-xl max-w-sm w-full mx-4">
@@ -155,6 +177,7 @@ export default function AdminPage() {
               className="w-full border rounded-xl px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-teal-400" />
             {error && <p className="text-red-500 text-sm mb-2">{error}</p>}
             <div className="flex gap-2">
+              {/* キャンセルでモーダルを閉じる（エラーもリセット） */}
               <button onClick={() => { setSelectedSchool(null); setError(''); }}
                 className="flex-1 py-2 border border-gray-300 rounded-xl text-sm text-gray-600 hover:bg-gray-50 transition">
                 キャンセル
