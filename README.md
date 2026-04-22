@@ -51,19 +51,38 @@
 
 ## 技術スタック
 
+### フロントエンド
 | 役割 | 技術 |
 |---|---|
-| フロントエンド | Next.js 14 (App Router) / React / TypeScript |
-| スタイリング | Tailwind CSS |
-| バックエンド | Next.js API Routes |
-| データベース | PostgreSQL 16 |
+| フレームワーク | Next.js 14 (App Router) |
+| UI ライブラリ | React 18 |
+| 言語 | TypeScript 5 |
+| スタイリング | Tailwind CSS 3（ユーティリティクラスを `className` に直書き） |
+
+### バックエンド
+| 役割 | 技術 |
+|---|---|
+| API | Next.js API Routes（フロントと同一プロセス） |
 | ORM | Prisma 5 |
-| 認証 | セッション Cookie（httpOnly）+ scrypt パスワードハッシュ（`salt:hash` 形式） |
+| データベース | PostgreSQL 16 |
+| 認証 | 独自セッション（httpOnly Cookie + `crypto.scrypt` ハッシュ、7日有効） |
 | リアルタイム更新 | HTTP ポーリング（授業画面: 2 秒間隔 / 通知: 10 秒間隔） |
+
+### AI・外部サービス
+| 役割 | 技術 |
+|---|---|
+| AI クライアント | `openai` パッケージ（`baseURL` を Groq に向けて使用） |
 | 音声書き起こし | Groq `whisper-large-v3-turbo`（無料枠） |
-| AI テキスト生成 | Groq `llama-3.3-70b-versatile`（無料枠） |
-| QR コード生成 | `qrcode` npm パッケージ |
-| インフラ | Docker / Docker Compose |
+| テキスト生成 | Groq `llama-3.3-70b-versatile`（無料枠） |
+| QR コード生成 | `qrcode` npm パッケージ（サーバーサイドで base64 画像生成） |
+
+### インフラ
+| 役割 | 技術 |
+|---|---|
+| コンテナ | Docker / Docker Compose |
+| 起動スクリプト | `docker-entrypoint.sh`（マイグレーション + 管理者初期化を自動実行） |
+
+> **注:** `package.json` に `@anthropic-ai/sdk` と `groq-sdk` が残っているが、どちらも現在は未使用（開発初期の名残）。
 
 ---
 
