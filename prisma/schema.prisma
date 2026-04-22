@@ -7,36 +7,84 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Room {
-  id          String        @id
-  name        String
-  teacherName String
-  createdAt   DateTime      @default(now())
-  endedAt     DateTime?
-  chatEnabled  Boolean       @default(false)
-  notes        String        @default("")
-  transcript   String        @default("")
-  summary      String        @default("")
-  messages    ChatMessage[]
-  reactions   Reaction[]
-  surveys     Survey[]
+model School {
+  id        String   @id @default(uuid())
+  name      String
+  prefix    String   @unique
+  createdAt DateTime @default(now())
+  users     User[]
+  rooms     Room[]
 }
 
-model ChatMessage {
+model User {
+  id           String   @id
+  schoolId     String
+  school       School   @relation(fields: [schoolId], references: [id])
+  role         Role     @default(STUDENT)
+  displayName  String
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  sessions       Session[]
+  createdRooms   Room[]                       @relation("TeacherRooms")
+  enrollments    Enrollment[]
+  boardPosts     BoardPost[]
+  checkResponses UnderstandingCheckResponse[]
+  notifications  Notification[]
+}
+
+enum Role {
+  SERVER_ADMIN
+  SCHOOL_ADMIN
+  TEACHER
+  STUDENT
+}
+
+model Session {
   id        String   @id @default(uuid())
-  content   String
-  studentId String
-  timestamp DateTime @default(now())
-  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  roomId    String
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model Room {
+  id          String    @id
+  name        String
+  schoolId    String
+  school      School    @relation(fields: [schoolId], references: [id])
+  teacherId   String
+  teacher     User      @relation("TeacherRooms", fields: [teacherId], references: [id])
+  createdAt   DateTime  @default(now())
+  endedAt     DateTime?
+  notes       String    @default("")
+  transcript  String    @default("")
+  summary     String    @default("")
+
+  reactions          Reaction[]
+  surveys            Survey[]
+  enrollments        Enrollment[]
+  boardPosts         BoardPost[]
+  understandingCheck UnderstandingCheck?
+}
+
+model Enrollment {
+  id       String   @id @default(uuid())
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roomId   String
+  room     Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  joinedAt DateTime @default(now())
+
+  @@unique([userId, roomId])
 }
 
 model Reaction {
   id        String   @id @default(uuid())
   type      String
   timestamp DateTime @default(now())
-  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
   roomId    String
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
 }
 
 model Survey {
@@ -44,8 +92,8 @@ model Survey {
   question  String
   isOpen    Boolean        @default(true)
   createdAt DateTime       @default(now())
-  room      Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
   roomId    String
+  room      Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
   options   SurveyOption[]
 }
 
@@ -53,6 +101,58 @@ model SurveyOption {
   id       String @id @default(uuid())
   text     String
   votes    Int    @default(0)
-  survey   Survey @relation(fields: [surveyId], references: [id], onDelete: Cascade)
   surveyId String
+  survey   Survey @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+}
+
+model BoardPost {
+  id        String   @id @default(uuid())
+  content   String
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  roomId    String
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+model UnderstandingCheck {
+  id          String    @id @default(uuid())
+  roomId      String    @unique
+  room        Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  scheduledAt DateTime
+  notifiedAt  DateTime?
+  tallyAt     DateTime?
+  talliedAt   DateTime?
+  resultBody  String    @default("") // 集計結果テキスト（スコア内訳 + AI 要約）
+  responses   UnderstandingCheckResponse[]
+}
+
+model UnderstandingCheckResponse {
+  id         String             @id @default(uuid())
+  checkId    String
+  check      UnderstandingCheck @relation(fields: [checkId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User               @relation(fields: [userId], references: [id])
+  score      Int
+  comment    String             @default("")
+  answeredAt DateTime           @default(now())
+
+  @@unique([checkId, userId])
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  body      String
+  link      String?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+}
+
+enum NotificationType {
+  UNDERSTANDING_CHECK
+  UNDERSTANDING_RESULT
 }

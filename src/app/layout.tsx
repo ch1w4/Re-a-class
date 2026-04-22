@@ -1,3 +1,5 @@
+// アプリ全体のルートレイアウト。
+// フォントと共通メタデータを設定し、全ページを <body> でラップする。
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';

@@ -1,6 +1,10 @@
+// QR コード生成 API
+// GET /api/rooms/[roomId]/qr
+// 生徒参加用の URL を QR コードとして base64 data URL で返す。
+// 教師画面でルーム作成直後に呼ばれ、生徒が QR をスキャンするだけで参加できる。
 import { NextRequest, NextResponse } from 'next/server';
 import QRCode from 'qrcode';
-import { prisma } from '@/lib/prisma';
+import { requireAuth } from '@/lib/requireAuth';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,18 +12,13 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { roomId: string } }
 ) {
-  const room = await prisma.room.findUnique({ where: { id: params.roomId } });
-  if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+  const { error } = await requireAuth(request);
+  if (error) return error;
 
-  const host = request.headers.get('host') ?? 'localhost:3000';
-  const protocol = host.startsWith('localhost') ? 'http' : 'https';
-  const url = `${protocol}://${host}/student/${params.roomId}`;
+  // リクエスト元のホスト（origin）を使って絶対 URL を生成する
+  const origin = request.nextUrl.origin;
+  const url = `${origin}/student/${params.roomId}`;
 
-  const dataUrl = await QRCode.toDataURL(url, {
-    width: 300,
-    margin: 2,
-    color: { dark: '#1e40af', light: '#ffffff' },
-  });
-
-  return NextResponse.json({ qr: dataUrl, url });
+  const qr = await QRCode.toDataURL(url, { width: 300, margin: 2 });
+  return NextResponse.json({ qr, url });
 }

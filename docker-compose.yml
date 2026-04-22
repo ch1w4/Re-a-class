@@ -22,10 +22,31 @@ services:
     environment:
       DATABASE_URL: postgresql://reaclass:reaclass_pass@db:5432/reaclass
       NODE_ENV: production
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      SESSION_SECRET: ${SESSION_SECRET}
+      CRON_SECRET: ${CRON_SECRET}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      SERVER_ADMIN_ID: ${SERVER_ADMIN_ID}
+      SERVER_ADMIN_PASS: ${SERVER_ADMIN_PASS}
+      SERVER_ADMIN_NAME: ${SERVER_ADMIN_NAME:-システム管理者}
     depends_on:
       db:
         condition: service_healthy
+
+  cron:
+    image: alpine:3.18
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      CRON_SECRET: ${CRON_SECRET}
+    command: >
+      sh -c "apk add --no-cache curl &&
+      while true; do
+        curl -sf -X POST -H \"x-cron-secret: $CRON_SECRET\" http://app:3000/api/cron/understanding-notify || true;
+        curl -sf -X POST -H \"x-cron-secret: $CRON_SECRET\" http://app:3000/api/cron/understanding-tally || true;
+        curl -sf -X POST -H \"x-cron-secret: $CRON_SECRET\" http://app:3000/api/cron/cleanup || true;
+        sleep 1800;
+      done"
 
 volumes:
   postgres_data:
