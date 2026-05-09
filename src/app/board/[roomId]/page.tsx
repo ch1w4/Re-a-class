@@ -4,7 +4,7 @@
 // 生徒同士は匿名ラベル（「生徒A」等）で表示されるため、互いの発信者がわからない。
 // SCHOOL_ADMIN/SERVER_ADMIN は実名表示（管理者モード）。
 // TEACHER はアクセス不可（403 エラー表示）。
-// 投稿はリアルタイムで一覧に追加される。
+// 投稿一覧は初回取得後も 3 秒ごとにポーリングして他者の投稿を反映する。
 
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -66,6 +66,38 @@ export default function BoardPage() {
       setLoading(false);
     })();
   }, [roomId, router, fetchPosts]);
+
+  // 掲示板一覧を 3 秒ごとに再取得（他者投稿の反映）。エラー・初回読み込み中は開始しない。
+  // ブラウザで別タブを手前にしたときは間隔を止め、戻ったときに再開して即時 1 回取得する。
+  useEffect(() => {
+    if (loading || error) return;
+
+    let id: ReturnType<typeof setInterval> | null = null;
+    const run = () => { void fetchPosts(); };
+    const stop = () => {
+      if (id != null) {
+        clearInterval(id);
+        id = null;
+      }
+    };
+    const start = () => {
+      if (id != null) return;
+      run();
+      id = setInterval(run, 3000);
+    };
+
+    const onVis = () => {
+      if (document.visibilityState === 'visible') start();
+      else stop();
+    };
+
+    if (document.visibilityState === 'visible') start();
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [loading, error, fetchPosts]);
 
   // 掲示板に投稿する。
   // 成功後はローカル state に追加して即時表示（再フェッチ不要）。
