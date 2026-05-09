@@ -13,12 +13,18 @@ type ReactionType = 'understood' | 'confused' | 'question' | 'slow' | 'fast';
 interface Reaction { id: string; type: ReactionType; timestamp: string }
 interface SurveyOption { id: string; text: string; votes: number }
 interface Survey { id: string; question: string; options: SurveyOption[]; isOpen: boolean; createdAt: string }
+interface UnderstandingCheckResponse {
+  id: string;
+  comment: string;
+  createdAt: string; 
+}
 interface UnderstandingCheckInfo {
   scheduledAt: string;
   notifiedAt: string | null;
   tallyAt: string | null;
   talliedAt: string | null;
   resultBody: string;
+  responses?: UnderstandingCheckResponse[];
 }
 interface Room {
   id: string; name: string; createdAt: string; endedAt: string | null;
@@ -50,6 +56,7 @@ export default function TeacherRoom() {
   const [generatingSummary, setGeneratingSummary] = useState(false);
   const [copied, setCopied] = useState(false);
   const [endConfirm, setEndConfirm] = useState(false);
+  const [showComments, setShowComments] = useState(false);
 
   const [notes, setNotes] = useState('');
   const [notesSaving, setNotesSaving] = useState(false);
@@ -299,6 +306,38 @@ export default function TeacherRoom() {
                   <pre className="text-xs text-gray-700 whitespace-pre-wrap bg-purple-50 rounded-xl p-3 leading-relaxed">
                     {room.understandingCheck.resultBody || '（結果なし）'}
                   </pre>
+
+                  {room.understandingCheck.responses && room.understandingCheck.responses.length > 0 && (
+                    <div className="border-t border-purple-100 pt-3 mt-3">
+                      <button 
+                        onClick={() => setShowComments(!showComments)}
+                        className="text-xs font-bold text-purple-600 hover:text-purple-800 flex items-center gap-1 transition-colors"
+                      >
+                        <span className={`transform transition-transform ${showComments ? 'rotate-90' : ''}`}>
+                          ▶
+                        </span>
+                        {showComments ? '生徒のコメント原文を閉じる' : '生徒のコメント原文を見る'}
+                      </button>
+
+                      {showComments && (
+                        <div className="space-y-2 max-h-48 overflow-y-auto pr-1 mt-3">
+                          {/* comments ではなく responses を map で回す */}
+                          {room.understandingCheck.responses.map((res, index) => {
+                            // もしコメントが空文字（スコア1や2でコメントなし）の場合はスキップして表示しない
+                            if (!res.comment) return null;
+
+                            return (
+                              <div key={index} className="bg-gray-50 rounded-lg p-2.5 border border-gray-200">
+                                {/* text ではなく res.comment を表示 */}
+                                <p className="text-xs text-gray-700">{res.comment}</p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                 </div>
               ) : room.understandingCheck.notifiedAt && room.understandingCheck.tallyAt ? (
                 new Date(room.understandingCheck.tallyAt) > new Date() ? (
