@@ -61,7 +61,15 @@ function LoginForm() {
             <input
               type="text"
               value={userId}
-              onChange={(e) => setUserId(e.target.value)}
+              onChange={(e) => {
+                // 1. 全角英数字を半角英数字に変換
+                const halfWidthStr = e.target.value.replace(/[Ａ-Ｚａ-ｚ０-９]/g, (s) => {
+                  return String.fromCharCode(s.charCodeAt(0) - 0xFEE0);
+                });
+                // 2. 英数字以外の文字（日本語、スペース、記号など）を削除
+                const alphaNumOnly = halfWidthStr.replace(/[^a-zA-Z0-9]/g, '');
+                setUserId(alphaNumOnly);
+              }}
               onKeyDown={(e) => e.key === 'Enter' && login()}
               placeholder="A00000001"
               className="w-full border border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-400 font-mono"
@@ -72,7 +80,13 @@ function LoginForm() {
             <input
               type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => {
+                // パスワードは大文字・小文字を区別し記号も使うため、全角英数字→半角への変換のみ行う
+                const halfWidthStr = e.target.value.replace(/[Ａ-Ｚａ-ｚ０-９]/g, (s) => {
+                  return String.fromCharCode(s.charCodeAt(0) - 0xFEE0);
+                });
+                setPassword(halfWidthStr);
+              }}
               onKeyDown={(e) => e.key === 'Enter' && login()}
               placeholder="••••••••"
               className="w-full border border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-400"

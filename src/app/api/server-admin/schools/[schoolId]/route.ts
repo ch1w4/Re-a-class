@@ -24,7 +24,7 @@ export async function DELETE(
     const users = await tx.user.findMany({ where: { schoolId: params.schoolId }, select: { id: true } });
     const userIds = users.map((u) => u.id);
 
-    await tx.chatMessage.deleteMany({ where: { userId: { in: userIds } } });
+    // await tx.chatMessage.deleteMany({ where: { userId: { in: userIds } } });
     await tx.boardPost.deleteMany({ where: { userId: { in: userIds } } });
     await tx.understandingCheckResponse.deleteMany({ where: { userId: { in: userIds } } });
     await tx.room.deleteMany({ where: { schoolId: params.schoolId } });

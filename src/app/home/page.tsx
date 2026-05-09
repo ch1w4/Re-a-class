@@ -155,10 +155,21 @@ export default function HomePage() {
           <section className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
             <h2 className="text-base font-bold text-gray-700 mb-3">授業に参加</h2>
             <div className="flex gap-2">
-              <input value={roomId} onChange={(e) => setRoomId(e.target.value.toUpperCase())}
+              <input 
+                value={roomId} 
+                onChange={(e) => {
+                  // 1. 全角英数字を半角英数字に変換
+                  const halfWidthStr = e.target.value.replace(/[Ａ-Ｚａ-ｚ０-９]/g, (s) => {
+                    return String.fromCharCode(s.charCodeAt(0) - 0xFEE0);
+                  });
+                  // 2. 英数字以外の文字（日本語、スペース、記号など）を削除
+                  const alphaNumOnly = halfWidthStr.replace(/[^a-zA-Z0-9]/g, '');
+                  setRoomId(alphaNumOnly);
+                }}
                 onKeyDown={(e) => e.key === 'Enter' && joinRoom()}
                 placeholder="ルームID（例: ABCD1234）"
-                className="flex-1 border rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                className="flex-1 border rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-teal-400" 
+              />
               <button onClick={joinRoom} disabled={!roomId.trim()}
                 className="px-4 py-2 bg-teal-500 text-white rounded-xl text-sm font-bold hover:bg-teal-600 disabled:opacity-50 transition">
                 参加
