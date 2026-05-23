@@ -23,16 +23,17 @@ interface Room {
   id: string; name: string; createdAt: string; endedAt: string | null;
   surveys: Survey[]; summary: string;
   teacher: { displayName: string };
+  studentCount: number;
 }
 interface BoardPost { id: string; content: string; authorLabel: string; createdAt: string }
 
 // リアクションボタンの定義: 通常状態(bg)とタップ時のハイライト状態(active)のスタイルを持つ
 const REACTION_BUTTONS: { type: ReactionType; label: string; emoji: string; bg: string; active: string }[] = [
-  { type: 'understood', label: '理解した',       emoji: '👍', bg: 'bg-green-100 border-green-300 text-green-700',    active: 'bg-green-500 border-green-600 text-white' },
-  { type: 'confused',   label: 'わからない',     emoji: '🤔', bg: 'bg-red-100 border-red-300 text-red-700',          active: 'bg-red-500 border-red-600 text-white' },
-  { type: 'question',   label: '質問あり',       emoji: '✋', bg: 'bg-yellow-100 border-yellow-300 text-yellow-700', active: 'bg-yellow-500 border-yellow-600 text-white' },
-  { type: 'slow',       label: 'もっとゆっくり', emoji: '🐢', bg: 'bg-blue-100 border-blue-300 text-blue-700',       active: 'bg-blue-500 border-blue-600 text-white' },
-  { type: 'fast',       label: 'もっと速く',     emoji: '🚀', bg: 'bg-purple-100 border-purple-300 text-purple-700', active: 'bg-purple-500 border-purple-600 text-white' },
+  { type: 'understood', label: '理解した', emoji: '👍', bg: 'bg-green-100 border-green-300 text-green-700', active: 'bg-green-500 border-green-600 text-white' },
+  { type: 'confused', label: 'わからない', emoji: '🤔', bg: 'bg-red-100 border-red-300 text-red-700', active: 'bg-red-500 border-red-600 text-white' },
+  { type: 'question', label: '質問あり', emoji: '✋', bg: 'bg-yellow-100 border-yellow-300 text-yellow-700', active: 'bg-yellow-500 border-yellow-600 text-white' },
+  { type: 'slow', label: 'もっとゆっくり', emoji: '🐢', bg: 'bg-blue-100 border-blue-300 text-blue-700', active: 'bg-blue-500 border-blue-600 text-white' },
+  { type: 'fast', label: 'もっと速く', emoji: '🚀', bg: 'bg-purple-100 border-purple-300 text-purple-700', active: 'bg-purple-500 border-purple-600 text-white' },
 ];
 
 function StudentRoom() {
@@ -239,8 +240,8 @@ function StudentRoom() {
   // タブリスト: 授業終了後に board タブ、チェック期間中に understanding タブが追加される
   const tabs: { id: Tab; label: string; emoji: string }[] = [
     { id: 'reaction', label: 'リアクション', emoji: '👍' },
-    { id: 'survey',   label: 'アンケート',   emoji: '📊' },
-    { id: 'summary',  label: '要約',         emoji: '📝' },
+    { id: 'survey', label: 'アンケート', emoji: '📊' },
+    { id: 'summary', label: '要約', emoji: '📝' },
     ...(isEnded ? [{ id: 'board' as Tab, label: '掲示板', emoji: '📌' }] : []),
     ...(understandingActive ? [{ id: 'understanding' as Tab, label: '理解度', emoji: '📋' }] : []),
   ];
@@ -263,6 +264,10 @@ function StudentRoom() {
           <div className="text-right">
             <p className="font-semibold">{room.name}</p>
             <p className="text-teal-200 text-xs">{room.teacher.displayName} 先生</p>
+          </div>
+          <div className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded-full text-sm font-medium text-gray-700">
+            <img src="/29250.png" alt="参加人数アイコン" className="w-4 h-4 object-contain" />
+            <span>{room?.studentCount ?? 0}</span>
           </div>
         </div>
       </header>
@@ -288,9 +293,8 @@ function StudentRoom() {
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`flex-shrink-0 flex-1 py-3 text-xs font-semibold transition-all relative min-w-[60px] ${
-                tab === t.id ? 'text-teal-600 border-b-2 border-teal-600' : 'text-gray-400 hover:text-gray-600'
-              }`}
+              className={`flex-shrink-0 flex-1 py-3 text-xs font-semibold transition-all relative min-w-[60px] ${tab === t.id ? 'text-teal-600 border-b-2 border-teal-600' : 'text-gray-400 hover:text-gray-600'
+                }`}
             >
               <span className="block text-lg leading-none mb-0.5">{t.emoji}</span>
               {t.label}
@@ -321,10 +325,9 @@ function StudentRoom() {
                     <button
                       key={btn.type}
                       onClick={() => sendReaction(btn.type)}
-                      className={`border-2 rounded-2xl p-5 flex flex-col items-center gap-2 font-semibold text-sm transition-all active:scale-95 ${
-                        sentReaction === btn.type ? btn.active : btn.bg
-                      } ${btn.type === 'understood' ? 'col-span-2' : ''}`}
-                      // 「理解した」ボタンは 2 カラム幅で強調表示
+                      className={`border-2 rounded-2xl p-5 flex flex-col items-center gap-2 font-semibold text-sm transition-all active:scale-95 ${sentReaction === btn.type ? btn.active : btn.bg
+                        } ${btn.type === 'understood' ? 'col-span-2' : ''}`}
+                    // 「理解した」ボタンは 2 カラム幅で強調表示
                     >
                       <span className="text-4xl">{btn.emoji}</span>
                       <span>{btn.label}</span>
@@ -483,17 +486,16 @@ function StudentRoom() {
                 {/* スコア選択ボタン: 選択中はそれぞれの色でハイライト */}
                 <div className="space-y-3 mb-6">
                   {[
-                    { score: 1, label: 'よく理解できた',         emoji: '😄', color: 'border-green-400 bg-green-50 text-green-700' },
-                    { score: 2, label: 'だいたい理解できた',     emoji: '🙂', color: 'border-blue-400 bg-blue-50 text-blue-700' },
+                    { score: 1, label: 'よく理解できた', emoji: '😄', color: 'border-green-400 bg-green-50 text-green-700' },
+                    { score: 2, label: 'だいたい理解できた', emoji: '🙂', color: 'border-blue-400 bg-blue-50 text-blue-700' },
                     { score: 3, label: 'あまり理解できなかった', emoji: '😕', color: 'border-yellow-400 bg-yellow-50 text-yellow-700' },
-                    { score: 4, label: '全然理解できなかった',   emoji: '😢', color: 'border-red-400 bg-red-50 text-red-700' },
+                    { score: 4, label: '全然理解できなかった', emoji: '😢', color: 'border-red-400 bg-red-50 text-red-700' },
                   ].map(({ score, label, emoji, color }) => (
                     <button
                       key={score}
                       onClick={() => setUnderstandingScore(score)}
-                      className={`w-full border-2 rounded-xl px-4 py-3 flex items-center gap-3 text-sm font-semibold transition-all ${
-                        understandingScore === score ? color : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-                      }`}
+                      className={`w-full border-2 rounded-xl px-4 py-3 flex items-center gap-3 text-sm font-semibold transition-all ${understandingScore === score ? color : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                        }`}
                     >
                       <span className="text-2xl">{emoji}</span>
                       <span>{label}</span>

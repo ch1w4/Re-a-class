@@ -22,15 +22,16 @@ interface Room {
   reactions: Reaction[];
   surveys: Survey[]; notes: string; transcript: string; summary: string;
   teacher: { displayName: string };
+  studentCount: number;
 }
 
 // 各リアクション種別の表示ラベル・絵文字・バーの色
 const REACTION_INFO: Record<ReactionType, { label: string; emoji: string; bar: string }> = {
-  understood: { label: '理解した',       emoji: '👍', bar: 'bg-green-400' },
-  confused:   { label: 'わからない',     emoji: '🤔', bar: 'bg-red-400' },
-  question:   { label: '質問あり',       emoji: '✋', bar: 'bg-yellow-400' },
-  slow:       { label: 'もっとゆっくり', emoji: '🐢', bar: 'bg-blue-400' },
-  fast:       { label: 'もっと速く',     emoji: '🚀', bar: 'bg-purple-400' },
+  understood: { label: '理解した', emoji: '👍', bar: 'bg-green-400' },
+  confused: { label: 'わからない', emoji: '🤔', bar: 'bg-red-400' },
+  question: { label: '質問あり', emoji: '✋', bar: 'bg-yellow-400' },
+  slow: { label: 'もっとゆっくり', emoji: '🐢', bar: 'bg-blue-400' },
+  fast: { label: 'もっと速く', emoji: '🚀', bar: 'bg-purple-400' },
 };
 const REACTION_TYPES = Object.keys(REACTION_INFO) as ReactionType[];
 
@@ -91,7 +92,7 @@ export default function TeacherRoom() {
     fetch(`/api/rooms/${roomId}/qr`)
       .then((r) => r.json())
       .then((d) => { setQrDataUrl(d.qr); setStudentUrl(d.url); })
-      .catch(() => {});
+      .catch(() => { });
   }, [roomId, fetchRoom]);
 
   useEffect(() => {
@@ -230,6 +231,10 @@ export default function TeacherRoom() {
             <div className="text-right">
               <p className="font-semibold">{room.name}</p>
               <p className="text-blue-200 text-sm">担当: {room.teacher.displayName}</p>
+            </div>
+            <div className="flex items-center gap-1 bg-blue-50 px-2 py-0.5 rounded-full text-xs font-semibold text-blue-700">
+              <img src="/29250.png" alt="参加人数アイコン" className="w-3.5 h-3.5 object-contain" />
+              <span>{room?.studentCount ?? 0}</span>
             </div>
           </div>
         </div>

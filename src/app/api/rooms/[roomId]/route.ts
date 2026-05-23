@@ -15,6 +15,7 @@ const includeAll = {
   surveys: { include: { options: true }, orderBy: { createdAt: 'asc' as const } },
   teacher: { select: { displayName: true } },
   enrollments: { select: { userId: true } },
+  _count: { select: { students: true } },
 };
 
 export async function GET(
@@ -27,7 +28,10 @@ export async function GET(
 
   const room = await prisma.room.findUnique({ where: { id: params.roomId }, include: includeAll });
   if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
-  return NextResponse.json(room);
+  return NextResponse.json({
+    ...room,
+    studentCount: (room as any)._count?.students ?? 0,
+  });
 }
 
 export async function DELETE(
