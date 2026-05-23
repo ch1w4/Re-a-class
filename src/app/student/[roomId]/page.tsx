@@ -61,7 +61,6 @@ function StudentRoom() {
   const [boardPosts, setBoardPosts] = useState<BoardPost[]>([]);  // 掲示板の投稿一覧
   const [boardMessage, setBoardMessage] = useState('');            // 投稿入力テキスト
   const [boardSending, setBoardSending] = useState(false);         // 投稿中フラグ（二重投稿防止）
-  const [boardLoaded, setBoardLoaded] = useState(false);           // 掲示板データ取得済みフラグ（タブ切り替え時に1回だけ取得）
 
   // --- 理解度チェック関連 ---
   const [understandingActive, setUnderstandingActive] = useState(false);     // チェック受付中かどうか（notifiedAt あり & talliedAt なし）
@@ -145,15 +144,41 @@ function StudentRoom() {
     return () => clearInterval(iv);
   }, [me, fetchRoom, fetchUnderstanding]);
 
-  // 掲示板タブを開いたとき、まだデータ未取得であれば一度だけ投稿一覧を取得する
-  // ポーリングではなく初回のみ取得（掲示板は授業終了後で更新頻度が低いため）
+  // 掲示板タブ表示中は即時取得し、続けて 3 秒ごとに一覧をポーリングする。
+  // ブラウザで別タブを手前にしたときは停止し、戻ったときに再開して即時 1 回取得する。
   useEffect(() => {
-    if (tab === 'board' && !boardLoaded) {
+    if (tab !== 'board') return;
+
+    let id: ReturnType<typeof setInterval> | null = null;
+    const load = () => {
       fetch(`/api/rooms/${roomId}/board`).then(async (res) => {
-        if (res.ok) { setBoardPosts(await res.json()); setBoardLoaded(true); }
+        if (res.ok) setBoardPosts(await res.json());
       });
-    }
-  }, [tab, boardLoaded, roomId]);
+    };
+    const stop = () => {
+      if (id != null) {
+        clearInterval(id);
+        id = null;
+      }
+    };
+    const start = () => {
+      if (id != null) return;
+      load();
+      id = setInterval(load, 3000);
+    };
+
+    const onVis = () => {
+      if (document.visibilityState === 'visible') start();
+      else stop();
+    };
+
+    if (document.visibilityState === 'visible') start();
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [tab, roomId]);
 
   // リアクションを送信する。授業終了後はブロック。
   // 送信後 1.5 秒間ボタンをハイライト表示してフィードバックを与える。
