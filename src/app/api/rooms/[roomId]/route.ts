@@ -16,8 +16,22 @@ const includeAll = {
   surveys: { include: { options: true }, orderBy: { createdAt: 'asc' as const } },
   teacher: { select: { displayName: true } },
   enrollments: { select: { userId: true } },
-  // タイミング情報と集計結果を含める（個別の回答内容は含めない）
-  understandingCheck: { select: { scheduledAt: true, notifiedAt: true, tallyAt: true, talliedAt: true, resultBody: true } },
+  // タイミング情報と集計結果を含める（個別の回答内容は含める）
+  understandingCheck: { 
+    select: { 
+      scheduledAt: true, 
+      notifiedAt: true, 
+      tallyAt: true, 
+      talliedAt: true, 
+      resultBody: true,
+      responses: {
+        select: {
+          id: true,
+          comment: true
+        }
+      }
+    } 
+  },
 };
 
 export async function GET(
