@@ -80,6 +80,20 @@ function StudentRoom() {
   const noteSelectionRef = useRef<Range | null>(null);
   const noteSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedNoteImageRef = useRef<HTMLImageElement | null>(null);
+  const noteImageDragRef = useRef<{
+    image: HTMLImageElement;
+    startX: number;
+    startY: number;
+    moved: boolean;
+    opacity: string;
+    pointerEvents: string;
+  } | null>(null);
+  const noteImageResizeRef = useRef<{
+    image: HTMLImageElement;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
+  const suppressNoteClickRef = useRef(false);
   const handwritingCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const handwritingDrawingRef = useRef(false);
   const [studentNoteHtml, setStudentNoteHtml] = useState('');
@@ -231,6 +245,26 @@ function StudentRoom() {
     updateSelectedNoteImage({ display: 'block', margin });
   };
 
+  const getNoteRangeFromPoint = (x: number, y: number) => {
+    const doc = document as Document & {
+      caretRangeFromPoint?: (pointX: number, pointY: number) => Range | null;
+      caretPositionFromPoint?: (
+        pointX: number,
+        pointY: number
+      ) => { offsetNode: Node; offset: number } | null;
+    };
+
+    if (doc.caretRangeFromPoint) return doc.caretRangeFromPoint(x, y);
+
+    const position = doc.caretPositionFromPoint?.(x, y);
+    if (!position) return null;
+
+    const range = document.createRange();
+    range.setStart(position.offsetNode, position.offset);
+    range.collapse(true);
+    return range;
+  };
+
   const updateNoteStyleState = (range?: Range | null) => {
     if (!range || range.collapsed) {
       setNoteStyleState({ bold: false, underline: false });
@@ -257,6 +291,11 @@ function StudentRoom() {
   };
 
   const handleNoteClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (suppressNoteClickRef.current) {
+      suppressNoteClickRef.current = false;
+      return;
+    }
+
     const target = event.target;
     if (target instanceof HTMLImageElement) {
       selectedNoteImageRef.current = target;
@@ -267,6 +306,124 @@ function StudentRoom() {
     selectedNoteImageRef.current = null;
     setHasSelectedNoteImage(false);
     rememberNoteSelection();
+  };
+
+  const isNoteImageResizePoint = (image: HTMLImageElement, event: ReactPointerEvent<HTMLDivElement>) => {
+    const rect = image.getBoundingClientRect();
+    return event.clientX >= rect.right - 24 && event.clientY >= rect.bottom - 24;
+  };
+
+  const handleNotePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const target = event.target;
+    if (!(target instanceof HTMLImageElement)) return;
+
+    event.preventDefault();
+    target.draggable = false;
+    selectedNoteImageRef.current = target;
+    setHasSelectedNoteImage(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+
+    if (isNoteImageResizePoint(target, event)) {
+      noteImageResizeRef.current = {
+        image: target,
+        startX: event.clientX,
+        startWidth: target.getBoundingClientRect().width,
+      };
+      return;
+    }
+
+    noteImageDragRef.current = {
+      image: target,
+      startX: event.clientX,
+      startY: event.clientY,
+      moved: false,
+      opacity: target.style.opacity,
+      pointerEvents: target.style.pointerEvents,
+    };
+  };
+
+  const handleNotePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const resizing = noteImageResizeRef.current;
+    if (resizing) {
+      event.preventDefault();
+      const editorWidth = studentNoteRef.current?.clientWidth ?? resizing.startWidth;
+      const minWidth = Math.min(80, editorWidth);
+      const maxWidth = Math.max(minWidth, editorWidth);
+      const nextWidth = Math.min(maxWidth, Math.max(minWidth, resizing.startWidth + event.clientX - resizing.startX));
+      resizing.image.style.width = `${Math.round(nextWidth)}px`;
+      resizing.image.style.maxWidth = '100%';
+      resizing.image.style.height = 'auto';
+      return;
+    }
+
+    const dragging = noteImageDragRef.current;
+    if (!dragging) return;
+
+    event.preventDefault();
+    if (!dragging.moved && Math.hypot(event.clientX - dragging.startX, event.clientY - dragging.startY) < 6) return;
+
+    dragging.moved = true;
+    dragging.image.style.opacity = '0.55';
+    dragging.image.style.pointerEvents = 'none';
+  };
+
+  const finishNoteImageMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const dragging = noteImageDragRef.current;
+    const editor = studentNoteRef.current;
+    if (!dragging || !editor) return;
+
+    const range = dragging.moved ? getNoteRangeFromPoint(event.clientX, event.clientY) : null;
+    dragging.image.style.opacity = dragging.opacity;
+    dragging.image.style.pointerEvents = dragging.pointerEvents;
+
+    if (!dragging.moved || !range || !editor.contains(range.commonAncestorContainer)) return;
+    if (dragging.image.contains(range.commonAncestorContainer)) return;
+
+    dragging.image.remove();
+    range.insertNode(dragging.image);
+    range.setStartAfter(dragging.image);
+    range.collapse(true);
+
+    const selection = window.getSelection();
+    if (selection) {
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+
+    selectedNoteImageRef.current = dragging.image;
+    setHasSelectedNoteImage(true);
+    suppressNoteClickRef.current = true;
+    flushStudentNoteSave();
+  };
+
+  const handleNotePointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    if (noteImageResizeRef.current) {
+      suppressNoteClickRef.current = true;
+      noteImageResizeRef.current = null;
+      flushStudentNoteSave();
+    }
+
+    finishNoteImageMove(event);
+    noteImageDragRef.current = null;
+  };
+
+  const handleNotePointerCancel = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    const dragging = noteImageDragRef.current;
+    if (dragging) {
+      dragging.image.style.opacity = dragging.opacity;
+      dragging.image.style.pointerEvents = dragging.pointerEvents;
+    }
+
+    noteImageDragRef.current = null;
+    noteImageResizeRef.current = null;
   };
 
   const runNoteCommand = (command: string, value?: string) => {
@@ -390,7 +547,7 @@ function StudentRoom() {
 
       const data = await res.json();
       insertHtmlIntoNote(
-        `<img src="${data.url}" alt="手書きメモ" style="width:100%;max-width:100%;height:auto;display:block;margin:8px 0;border:1px solid #e5e7eb;border-radius:12px;" />`
+        `<img src="${data.url}" alt="手書きメモ" draggable="false" style="width:100%;max-width:100%;height:auto;display:block;margin:8px 0;border:1px solid #e5e7eb;border-radius:12px;" />`
       );
       setShowHandwritingModal(false);
     } finally {
@@ -884,8 +1041,13 @@ function StudentRoom() {
               onKeyUp={rememberNoteSelection}
               onMouseUp={rememberNoteSelection}
               onClick={handleNoteClick}
+              onPointerDown={handleNotePointerDown}
+              onPointerMove={handleNotePointerMove}
+              onPointerUp={handleNotePointerUp}
+              onPointerCancel={handleNotePointerCancel}
+              onDragStart={(e) => e.preventDefault()}
               onBlur={() => { rememberNoteSelection(); flushStudentNoteSave(); }}
-              className="w-full min-h-80 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-700 leading-relaxed focus:outline-none focus:ring-2 focus:ring-teal-400 overflow-y-auto empty:before:content-[attr(data-placeholder)] empty:before:text-gray-400"
+              className="w-full min-h-80 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-700 leading-relaxed focus:outline-none focus:ring-2 focus:ring-teal-400 overflow-y-auto empty:before:content-[attr(data-placeholder)] empty:before:text-gray-400 [&_img]:cursor-grab [&_img]:select-none"
             />
             <p className="text-xs text-gray-400 mt-2">
               {noteSaving ? '保存中...' : noteSaved ? '保存しました' : 'サーバーに自動保存されます'}
