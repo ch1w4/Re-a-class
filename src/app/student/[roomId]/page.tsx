@@ -10,7 +10,15 @@
 //   - 理解度チェック（授業終了 4 日後に通知 → スコア 1〜4 とコメントで回答）
 // 2 秒 polling でリアルタイム更新。参加登録（Enrollment）は入室時に自動実行。
 
-import { Suspense, useState, useEffect, useCallback, useRef, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  Suspense,
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 
 type ReactionType = 'understood' | 'confused' | 'question' | 'slow' | 'fast';
@@ -71,12 +79,14 @@ function StudentRoom() {
   const studentNoteRef = useRef<HTMLDivElement | null>(null);
   const noteSelectionRef = useRef<Range | null>(null);
   const noteSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const selectedNoteImageRef = useRef<HTMLImageElement | null>(null);
   const handwritingCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const handwritingDrawingRef = useRef(false);
   const [studentNoteHtml, setStudentNoteHtml] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteSaved, setNoteSaved] = useState(false);
   const [noteStyleState, setNoteStyleState] = useState({ bold: false, underline: false });
+  const [hasSelectedNoteImage, setHasSelectedNoteImage] = useState(false);
   const [showHandwritingModal, setShowHandwritingModal] = useState(false);
   const [handwritingSaving, setHandwritingSaving] = useState(false);
 
@@ -197,6 +207,30 @@ function StudentRoom() {
     void saveStudentNoteToServer(html);
   }, [saveStudentNoteToServer]);
 
+  const updateSelectedNoteImage = useCallback((style: Partial<CSSStyleDeclaration>) => {
+    const image = selectedNoteImageRef.current;
+    if (!image) return;
+
+    Object.entries(style).forEach(([key, value]) => {
+      if (typeof value === 'string') {
+        image.style.setProperty(key.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`), value);
+      }
+    });
+    flushStudentNoteSave();
+  }, [flushStudentNoteSave]);
+
+  const setSelectedNoteImageSize = (width: string) => {
+    updateSelectedNoteImage({ width, maxWidth: '100%', height: 'auto' });
+  };
+
+  const setSelectedNoteImageAlign = (align: 'left' | 'center' | 'right') => {
+    const margin =
+      align === 'left' ? '8px auto 8px 0'
+      : align === 'right' ? '8px 0 8px auto'
+      : '8px auto';
+    updateSelectedNoteImage({ display: 'block', margin });
+  };
+
   const updateNoteStyleState = (range?: Range | null) => {
     if (!range || range.collapsed) {
       setNoteStyleState({ bold: false, underline: false });
@@ -220,6 +254,19 @@ function StudentRoom() {
       noteSelectionRef.current = range;
       updateNoteStyleState(range);
     }
+  };
+
+  const handleNoteClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    const target = event.target;
+    if (target instanceof HTMLImageElement) {
+      selectedNoteImageRef.current = target;
+      setHasSelectedNoteImage(true);
+      return;
+    }
+
+    selectedNoteImageRef.current = null;
+    setHasSelectedNoteImage(false);
+    rememberNoteSelection();
   };
 
   const runNoteCommand = (command: string, value?: string) => {
@@ -343,7 +390,7 @@ function StudentRoom() {
 
       const data = await res.json();
       insertHtmlIntoNote(
-        `<img src="${data.url}" alt="手書きメモ" style="max-width:100%;height:auto;display:block;margin:8px 0;border:1px solid #e5e7eb;border-radius:12px;" />`
+        `<img src="${data.url}" alt="手書きメモ" style="width:100%;max-width:100%;height:auto;display:block;margin:8px 0;border:1px solid #e5e7eb;border-radius:12px;" />`
       );
       setShowHandwritingModal(false);
     } finally {
@@ -388,7 +435,12 @@ function StudentRoom() {
 
   // メモタブを開き直したとき、保存済み内容を編集欄へ戻す
   useEffect(() => {
-    if (tab !== 'memo' || !studentNoteRef.current) return;
+    if (tab !== 'memo') {
+      selectedNoteImageRef.current = null;
+      setHasSelectedNoteImage(false);
+      return;
+    }
+    if (!studentNoteRef.current) return;
     if (studentNoteRef.current.innerHTML !== studentNoteHtml) {
       studentNoteRef.current.innerHTML = studentNoteHtml;
     }
@@ -769,6 +821,59 @@ function StudentRoom() {
                 手書き
               </button>
             </div>
+            {hasSelectedNoteImage && (
+              <div className="flex flex-wrap items-center gap-2 border border-teal-200 bg-teal-50 rounded-xl p-2 mb-2">
+                <span className="text-xs font-semibold text-teal-700">画像</span>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => setSelectedNoteImageSize('40%')}
+                  className="px-2 py-1 bg-white border border-teal-200 rounded-lg text-xs font-semibold text-teal-700 hover:bg-teal-100"
+                >
+                  小
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => setSelectedNoteImageSize('70%')}
+                  className="px-2 py-1 bg-white border border-teal-200 rounded-lg text-xs font-semibold text-teal-700 hover:bg-teal-100"
+                >
+                  中
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => setSelectedNoteImageSize('100%')}
+                  className="px-2 py-1 bg-white border border-teal-200 rounded-lg text-xs font-semibold text-teal-700 hover:bg-teal-100"
+                >
+                  大
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => setSelectedNoteImageAlign('left')}
+                  className="px-2 py-1 bg-white border border-teal-200 rounded-lg text-xs font-semibold text-teal-700 hover:bg-teal-100"
+                >
+                  左
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => setSelectedNoteImageAlign('center')}
+                  className="px-2 py-1 bg-white border border-teal-200 rounded-lg text-xs font-semibold text-teal-700 hover:bg-teal-100"
+                >
+                  中央
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => setSelectedNoteImageAlign('right')}
+                  className="px-2 py-1 bg-white border border-teal-200 rounded-lg text-xs font-semibold text-teal-700 hover:bg-teal-100"
+                >
+                  右
+                </button>
+              </div>
+            )}
             <div
               ref={studentNoteRef}
               contentEditable
@@ -778,6 +883,7 @@ function StudentRoom() {
               onInput={scheduleStudentNoteSave}
               onKeyUp={rememberNoteSelection}
               onMouseUp={rememberNoteSelection}
+              onClick={handleNoteClick}
               onBlur={() => { rememberNoteSelection(); flushStudentNoteSave(); }}
               className="w-full min-h-80 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-700 leading-relaxed focus:outline-none focus:ring-2 focus:ring-teal-400 overflow-y-auto empty:before:content-[attr(data-placeholder)] empty:before:text-gray-400"
             />
