@@ -29,6 +29,7 @@ model User {
   createdRooms   Room[]                       @relation("TeacherRooms")
   enrollments    Enrollment[]
   boardPosts     BoardPost[]
+  studentNotes   StudentNote[]
   checkResponses UnderstandingCheckResponse[]
   notifications  Notification[]
 }
@@ -65,6 +66,7 @@ model Room {
   surveys            Survey[]
   enrollments        Enrollment[]
   boardPosts         BoardPost[]
+  studentNotes       StudentNote[]
   understandingCheck UnderstandingCheck?
 }
 
@@ -113,6 +115,19 @@ model BoardPost {
   roomId    String
   room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
+}
+
+model StudentNote {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roomId    String
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  body      String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, roomId])
 }
 
 model UnderstandingCheck {

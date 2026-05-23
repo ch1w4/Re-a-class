@@ -4,6 +4,7 @@
 // 主な機能:
 //   - 5 種類のリアクション送信（理解した・わからない・質問あり・ゆっくり・速く）
 //   - アンケート回答・結果閲覧
+//   - 授業中メモ（DB保存）
 //   - 授業メモ（教師が書いた板書内容）の閲覧
 //   - 授業終了後: AI 要約・書き起こしの閲覧
 //   - 理解度チェック（授業終了 4 日後に通知 → スコア 1〜4 とコメントで回答）
@@ -13,9 +14,9 @@ import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 
 type ReactionType = 'understood' | 'confused' | 'question' | 'slow' | 'fast';
-// タブ ID の型: 授業中は reaction/survey、終了後は board が追加、理解度チェック期間中は understanding が追加
+// タブ ID の型: 授業中は reaction/memo/survey、終了後は board が追加、理解度チェック期間中は understanding が追加
 // 要約は教師フィードバック用のため生徒タブには含めない
-type Tab = 'reaction' | 'survey' | 'board' | 'understanding';
+type Tab = 'reaction' | 'memo' | 'survey' | 'board' | 'understanding';
 
 interface Me { id: string; displayName: string; role: string }
 interface SurveyOption { id: string; text: string; votes: number }
@@ -26,6 +27,18 @@ interface Room {
   teacher: { displayName: string };
 }
 interface BoardPost { id: string; content: string; authorLabel: string; createdAt: string }
+
+const NOTE_HTML_PREFIX = '__reaclass_html__:'; // 旧 localStorage メモの移行用
+
+function plainTextToHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/\r?\n/g, '<br>');
+}
 
 // リアクションボタンの定義: 通常状態(bg)とタップ時のハイライト状態(active)のスタイルを持つ
 const REACTION_BUTTONS: { type: ReactionType; label: string; emoji: string; bg: string; active: string }[] = [
@@ -52,6 +65,16 @@ function StudentRoom() {
   // --- リアクション関連 ---
   // sentReaction: 直前に送ったリアクション種別。1.5 秒間ハイライト表示して null に戻す
   const [sentReaction, setSentReaction] = useState<ReactionType | null>(null);
+
+  // --- 生徒メモ関連 ---
+  // 授業・ユーザーごとの個人メモとしてDBへ保存する
+  const studentNoteRef = useRef<HTMLDivElement | null>(null);
+  const noteSelectionRef = useRef<Range | null>(null);
+  const noteSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [studentNoteHtml, setStudentNoteHtml] = useState('');
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [noteSaved, setNoteSaved] = useState(false);
+  const [noteStyleState, setNoteStyleState] = useState({ bold: false, underline: false });
 
   // --- アンケート関連 ---
   // answeredSurveys: このセッションで回答済みのアンケートID集合（二重回答防止のためローカル管理）
@@ -133,10 +156,140 @@ function StudentRoom() {
     } catch { /* 失敗しても通常フローには影響しない */ }
   }, [roomId]);
 
+  const saveStudentNoteToServer = useCallback(async (html: string) => {
+    if (!me) return;
+    setNoteSaving(true);
+    setNoteSaved(false);
+    try {
+      const res = await fetch(`/api/rooms/${roomId}/student-note`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body: html }),
+      });
+      if (res.ok) {
+        setNoteSaved(true);
+        setTimeout(() => setNoteSaved(false), 1800);
+      }
+    } finally {
+      setNoteSaving(false);
+    }
+  }, [me, roomId]);
+
+  const scheduleStudentNoteSave = useCallback(() => {
+    if (!studentNoteRef.current) return;
+    const html = studentNoteRef.current.innerHTML;
+    setStudentNoteHtml(html);
+    if (noteSaveTimerRef.current) clearTimeout(noteSaveTimerRef.current);
+    noteSaveTimerRef.current = setTimeout(() => {
+      void saveStudentNoteToServer(html);
+    }, 700);
+  }, [saveStudentNoteToServer]);
+
+  const flushStudentNoteSave = useCallback(() => {
+    if (!studentNoteRef.current) return;
+    const html = studentNoteRef.current.innerHTML;
+    setStudentNoteHtml(html);
+    if (noteSaveTimerRef.current) clearTimeout(noteSaveTimerRef.current);
+    void saveStudentNoteToServer(html);
+  }, [saveStudentNoteToServer]);
+
+  const updateNoteStyleState = (range?: Range | null) => {
+    if (!range || range.collapsed) {
+      setNoteStyleState({ bold: false, underline: false });
+      return;
+    }
+
+    setNoteStyleState({
+      bold: document.queryCommandState('bold'),
+      underline: document.queryCommandState('underline'),
+    });
+  };
+
+  const rememberNoteSelection = () => {
+    const editor = studentNoteRef.current;
+    const selection = window.getSelection();
+    if (!editor || !selection || selection.rangeCount === 0) return;
+
+    const anchor = selection.anchorNode;
+    if (anchor && editor.contains(anchor)) {
+      const range = selection.getRangeAt(0).cloneRange();
+      noteSelectionRef.current = range;
+      updateNoteStyleState(range);
+    }
+  };
+
+  const runNoteCommand = (command: string, value?: string) => {
+    const editor = studentNoteRef.current;
+    if (!editor) return;
+
+    const range = noteSelectionRef.current;
+    if (!range || range.collapsed || !editor.contains(range.commonAncestorContainer)) {
+      updateNoteStyleState(null);
+      editor.focus();
+      return;
+    }
+
+    const selection = window.getSelection();
+    if (selection) {
+      editor.focus();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+
+    document.execCommand('styleWithCSS', false, 'true');
+    document.execCommand(command, false, value);
+    scheduleStudentNoteSave();
+    rememberNoteSelection();
+  };
+
   // me が設定された（ログイン確認済み）タイミングで初回データ取得を実行
   useEffect(() => {
     if (me) { fetchRoom(); fetchUnderstanding(); }
   }, [me, fetchRoom, fetchUnderstanding]);
+
+  // 生徒メモを授業・ユーザー単位でDBから復元する
+  useEffect(() => {
+    if (!me) return;
+    let cancelled = false;
+
+    (async () => {
+      const res = await fetch(`/api/rooms/${roomId}/student-note`);
+      const data = res.ok ? await res.json() : {};
+      let html = typeof data.body === 'string' ? data.body : '';
+
+      // 既存の localStorage 版メモがある場合、DBへ一度だけ移行する
+      const localKey = `student-note:${roomId}:${me.id}`;
+      const savedLocal = localStorage.getItem(localKey) ?? '';
+      const localHtml = savedLocal.startsWith(NOTE_HTML_PREFIX)
+        ? savedLocal.slice(NOTE_HTML_PREFIX.length)
+        : plainTextToHtml(savedLocal);
+      if (!html && localHtml) {
+        html = localHtml;
+        void saveStudentNoteToServer(localHtml);
+        localStorage.removeItem(localKey);
+      }
+
+      if (cancelled) return;
+      setStudentNoteHtml(html);
+      if (studentNoteRef.current) studentNoteRef.current.innerHTML = html;
+    })();
+
+    return () => { cancelled = true; };
+  }, [me, roomId, saveStudentNoteToServer]);
+
+  // メモタブを開き直したとき、保存済み内容を編集欄へ戻す
+  useEffect(() => {
+    if (tab !== 'memo' || !studentNoteRef.current) return;
+    if (studentNoteRef.current.innerHTML !== studentNoteHtml) {
+      studentNoteRef.current.innerHTML = studentNoteHtml;
+    }
+  }, [tab, studentNoteHtml]);
+
+  useEffect(() => {
+    return () => {
+      if (noteSaveTimerRef.current) clearTimeout(noteSaveTimerRef.current);
+    };
+  }, []);
 
   // 2 秒ごとにポーリングを開始する。アンマウント時にクリアして無限ループを防ぐ。
   useEffect(() => {
@@ -268,6 +421,7 @@ function StudentRoom() {
   // 要約は教師フィードバック専用のため生徒には表示しない
   const tabs: { id: Tab; label: string; emoji: string }[] = [
     { id: 'reaction', label: 'リアクション', emoji: '👍' },
+    { id: 'memo',     label: 'メモ',         emoji: '📝' },
     { id: 'survey',   label: 'アンケート',   emoji: '📊' },
     ...(isEnded ? [{ id: 'board' as Tab, label: '掲示板', emoji: '📌' }] : []),
     ...(understandingActive ? [{ id: 'understanding' as Tab, label: '理解度', emoji: '📋' }] : []),
@@ -387,6 +541,76 @@ function StudentRoom() {
                 <p className="text-center text-xs text-gray-400 mt-6">何度でも送れます。匿名で先生に届きます。</p>
               </>
             )}
+          </div>
+        )}
+
+        {/* ===== メモタブ ===== */}
+        {tab === 'memo' && (
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+            <h2 className="text-base font-bold text-gray-700 mb-2">メモ</h2>
+            <div className="flex flex-wrap items-center gap-2 border border-gray-200 bg-gray-50 rounded-xl p-2 mb-2">
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => runNoteCommand('bold')}
+                aria-pressed={noteStyleState.bold}
+                className={`px-2 py-1 border rounded-lg text-sm font-bold hover:bg-gray-100 ${
+                  noteStyleState.bold
+                    ? 'bg-teal-100 border-teal-400 text-teal-700 ring-2 ring-teal-100'
+                    : 'bg-white border-gray-200 text-gray-700'
+                }`}
+              >
+                B
+              </button>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => runNoteCommand('underline')}
+                aria-pressed={noteStyleState.underline}
+                className={`px-2 py-1 border rounded-lg text-sm underline font-semibold hover:bg-gray-100 ${
+                  noteStyleState.underline
+                    ? 'bg-teal-100 border-teal-400 text-teal-700 ring-2 ring-teal-100'
+                    : 'bg-white border-gray-200 text-gray-700'
+                }`}
+              >
+                U
+              </button>
+              <select
+                defaultValue=""
+                onChange={(e) => runNoteCommand('fontSize', e.target.value)}
+                className="bg-white border border-gray-200 rounded-lg px-2 py-1 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-400"
+              >
+                <option value="" disabled>サイズ</option>
+                <option value="2">小</option>
+                <option value="3">標準</option>
+                <option value="5">大</option>
+                <option value="7">特大</option>
+              </select>
+              <label className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-2 py-1 text-sm text-gray-700">
+                色
+                <input
+                  type="color"
+                  defaultValue="#111827"
+                  onChange={(e) => runNoteCommand('foreColor', e.target.value)}
+                  className="w-6 h-6 p-0 border-0 bg-transparent"
+                />
+              </label>
+            </div>
+            <div
+              ref={studentNoteRef}
+              contentEditable
+              suppressContentEditableWarning
+              spellCheck={false}
+              data-placeholder="授業中のメモを入力..."
+              onInput={scheduleStudentNoteSave}
+              onKeyUp={rememberNoteSelection}
+              onMouseUp={rememberNoteSelection}
+              onBlur={() => { rememberNoteSelection(); flushStudentNoteSave(); }}
+              className="w-full min-h-80 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-700 leading-relaxed focus:outline-none focus:ring-2 focus:ring-teal-400 overflow-y-auto empty:before:content-[attr(data-placeholder)] empty:before:text-gray-400"
+            />
+            <p className="text-xs text-gray-400 mt-2">
+              {noteSaving ? '保存中...' : noteSaved ? '保存しました' : 'サーバーに自動保存されます'}
+            </p>
           </div>
         )}
 
