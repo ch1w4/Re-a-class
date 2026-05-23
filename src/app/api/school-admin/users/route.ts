@@ -45,23 +45,39 @@ export async function POST(request: NextRequest) {
 
   const prefix = school.prefix;
 
-  // 開始シーケンス番号を決定する。
-  // startSeq が有効な正整数であればその値から、省略または無効なら「最小の未使用番号」を使う。
+  // 1. ロールごとのID範囲を定義
+  const minSeq = role === 'TEACHER' ? 90000001 : 10000001;
+  const maxSeq = role === 'TEACHER' ? 99999999 : 89999999;
+
+  // 2. 開始シーケンス番号を決定する。
   let seq: number;
-  if (startSeq && Number.isInteger(startSeq) && startSeq >= 1 && startSeq <= 99999999) {
-    seq = startSeq;
+  if (startSeq !== undefined && startSeq !== null) {
+    seq = Number(startSeq);
+    // フロントエンドでもチェックしていますが、API側でも厳密に範囲をチェックします
+    if (!Number.isInteger(seq) || seq < minSeq || seq > maxSeq) {
+      return NextResponse.json({ error: `ID番号は ${minSeq} 〜 ${maxSeq} の範囲で指定してください` }, { status: 400 });
+    }
   } else {
-    // 既存ユーザーの ID から使用済み番号の集合を作り、最小の未使用番号（抜け番再利用）を探す
+    // 既存ユーザーの ID から使用済み番号の集合を作り、ロールごとの範囲内で最小の未使用番号を探す
     const all = await prisma.user.findMany({
       where: { id: { startsWith: prefix } },
       select: { id: true },
     });
     const used = new Set(all.map((u) => parseInt(u.id.slice(prefix.length), 10)));
-    seq = 1;
-    while (used.has(seq)) seq++;
+    
+    // seq=1 ではなく、指定されたロールの最小番号（minSeq）からスタートする
+    seq = minSeq;
+    while (used.has(seq)) {
+      seq++;
+    }
+    
+    // 万が一、上限（99999999 または 89999999）を超えてしまった場合のエラー処理
+    if (seq > maxSeq) {
+      return NextResponse.json({ error: 'このロールの割り当て可能なIDが上限に達しています' }, { status: 409 });
+    }
   }
 
-  // seq を prefix + 8 桁ゼロ埋めに変換する（例: A + 1 → "A00000001"）
+  // seq を prefix + 8 桁ゼロ埋めに変換する
   const buildId = (n: number) => `${prefix}${String(n).padStart(8, '0')}`;
 
   // 一括追加: body.names 配列が渡された場合
@@ -71,17 +87,22 @@ export async function POST(request: NextRequest) {
 
     const created: { id: string; displayName: string; role: string }[] = [];
     for (const displayName of names) {
+      // 複数人作成中に上限を超えないかチェック
+      if (seq > maxSeq) {
+        return NextResponse.json({ error: `IDが上限(${maxSeq})に達したため、残りのユーザーは作成できませんでした` }, { status: 409 });
+      }
+
       const id = buildId(seq);
-      // 採番した ID が既に存在する場合は 409 を返す（startSeq 指定で既存 ID と衝突した場合）
       const existing = await prisma.user.findUnique({ where: { id } });
       if (existing) {
         return NextResponse.json({ error: `ID ${id} はすでに使用されています` }, { status: 409 });
       }
-      // 初期パスワード = ユーザー ID（scrypt でハッシュ化して保存）
+      
       const newUser = await prisma.user.create({
         data: { id, schoolId: user!.schoolId, role, displayName, passwordHash: hashPassword(id) },
       });
       created.push({ id: newUser.id, displayName: newUser.displayName, role: newUser.role });
+      
       seq++; // 次のユーザーのために連番をインクリメント
     }
     return NextResponse.json({ created }, { status: 201 });
