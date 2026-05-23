@@ -24,10 +24,13 @@ services:
       NODE_ENV: production
       SESSION_SECRET: ${SESSION_SECRET}
       CRON_SECRET: ${CRON_SECRET}
+      UPLOAD_DIR: /app/uploads
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       SERVER_ADMIN_ID: ${SERVER_ADMIN_ID}
       SERVER_ADMIN_PASS: ${SERVER_ADMIN_PASS}
       SERVER_ADMIN_NAME: ${SERVER_ADMIN_NAME:-システム管理者}
+    volumes:
+      - uploads_data:/app/uploads
     depends_on:
       db:
         condition: service_healthy
@@ -50,3 +53,4 @@ services:
 
 volumes:
   postgres_data:
+  uploads_data:

@@ -33,6 +33,7 @@ COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 RUN mkdir -p node_modules/.bin && ln -sf /app/node_modules/prisma/build/index.js node_modules/.bin/prisma
+RUN mkdir -p uploads && chown -R nextjs:nodejs uploads
 
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
@@ -42,5 +43,6 @@ USER nextjs
 EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
+ENV UPLOAD_DIR="/app/uploads"
 
 ENTRYPOINT ["./docker-entrypoint.sh"]

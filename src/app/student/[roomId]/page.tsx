@@ -10,7 +10,7 @@
 //   - 理解度チェック（授業終了 4 日後に通知 → スコア 1〜4 とコメントで回答）
 // 2 秒 polling でリアルタイム更新。参加登録（Enrollment）は入室時に自動実行。
 
-import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
+import { Suspense, useState, useEffect, useCallback, useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 
 type ReactionType = 'understood' | 'confused' | 'question' | 'slow' | 'fast';
@@ -71,10 +71,14 @@ function StudentRoom() {
   const studentNoteRef = useRef<HTMLDivElement | null>(null);
   const noteSelectionRef = useRef<Range | null>(null);
   const noteSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handwritingCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const handwritingDrawingRef = useRef(false);
   const [studentNoteHtml, setStudentNoteHtml] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteSaved, setNoteSaved] = useState(false);
   const [noteStyleState, setNoteStyleState] = useState({ bold: false, underline: false });
+  const [showHandwritingModal, setShowHandwritingModal] = useState(false);
+  const [handwritingSaving, setHandwritingSaving] = useState(false);
 
   // --- アンケート関連 ---
   // answeredSurveys: このセッションで回答済みのアンケートID集合（二重回答防止のためローカル管理）
@@ -242,6 +246,111 @@ function StudentRoom() {
     rememberNoteSelection();
   };
 
+  const insertHtmlIntoNote = useCallback((html: string) => {
+    const editor = studentNoteRef.current;
+    if (!editor) return;
+
+    editor.focus();
+    const selection = window.getSelection();
+    const range = noteSelectionRef.current;
+    if (selection) {
+      selection.removeAllRanges();
+      if (range && editor.contains(range.commonAncestorContainer)) {
+        selection.addRange(range);
+      } else {
+        const endRange = document.createRange();
+        endRange.selectNodeContents(editor);
+        endRange.collapse(false);
+        selection.addRange(endRange);
+      }
+    }
+
+    document.execCommand('insertHTML', false, html);
+    flushStudentNoteSave();
+    rememberNoteSelection();
+  }, [flushStudentNoteSave]);
+
+  const resetHandwritingCanvas = useCallback(() => {
+    const canvas = handwritingCanvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const ratio = window.devicePixelRatio || 1;
+    canvas.width = Math.max(1, Math.round(rect.width * ratio));
+    canvas.height = Math.max(1, Math.round(rect.height * ratio));
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, rect.width, rect.height);
+    ctx.strokeStyle = '#111827';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+  }, []);
+
+  const getHandwritingPoint = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  };
+
+  const startHandwriting = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const ctx = event.currentTarget.getContext('2d');
+    if (!ctx) return;
+    const point = getHandwritingPoint(event);
+    handwritingDrawingRef.current = true;
+    ctx.beginPath();
+    ctx.moveTo(point.x, point.y);
+  };
+
+  const moveHandwriting = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (!handwritingDrawingRef.current) return;
+    const ctx = event.currentTarget.getContext('2d');
+    if (!ctx) return;
+    const point = getHandwritingPoint(event);
+    ctx.lineTo(point.x, point.y);
+    ctx.stroke();
+  };
+
+  const endHandwriting = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    handwritingDrawingRef.current = false;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  const insertHandwritingImage = async () => {
+    const canvas = handwritingCanvasRef.current;
+    if (!canvas || handwritingSaving) return;
+
+    setHandwritingSaving(true);
+    try {
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+      if (!blob) {
+        showToast('画像の作成に失敗しました');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('image', new File([blob], 'handwriting.png', { type: 'image/png' }));
+      const res = await fetch(`/api/rooms/${roomId}/student-note/images`, { method: 'POST', body: formData });
+      if (!res.ok) {
+        showToast('手書き画像の保存に失敗しました');
+        return;
+      }
+
+      const data = await res.json();
+      insertHtmlIntoNote(
+        `<img src="${data.url}" alt="手書きメモ" style="max-width:100%;height:auto;display:block;margin:8px 0;border:1px solid #e5e7eb;border-radius:12px;" />`
+      );
+      setShowHandwritingModal(false);
+    } finally {
+      setHandwritingSaving(false);
+    }
+  };
+
   // me が設定された（ログイン確認済み）タイミングで初回データ取得を実行
   useEffect(() => {
     if (me) { fetchRoom(); fetchUnderstanding(); }
@@ -290,6 +399,12 @@ function StudentRoom() {
       if (noteSaveTimerRef.current) clearTimeout(noteSaveTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (!showHandwritingModal) return;
+    const id = requestAnimationFrame(resetHandwritingCanvas);
+    return () => cancelAnimationFrame(id);
+  }, [showHandwritingModal, resetHandwritingCanvas]);
 
   // 2 秒ごとにポーリングを開始する。アンマウント時にクリアして無限ループを防ぐ。
   useEffect(() => {
@@ -433,6 +548,56 @@ function StudentRoom() {
       {toast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-gray-800 text-white text-sm px-4 py-2 rounded-full shadow-lg">
           {toast}
+        </div>
+      )}
+
+      {showHandwritingModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-base font-bold text-gray-700">手書き入力</h3>
+              <button
+                type="button"
+                onClick={() => setShowHandwritingModal(false)}
+                className="text-sm text-gray-400 hover:text-gray-600"
+              >
+                閉じる
+              </button>
+            </div>
+            <canvas
+              ref={handwritingCanvasRef}
+              onPointerDown={startHandwriting}
+              onPointerMove={moveHandwriting}
+              onPointerUp={endHandwriting}
+              onPointerCancel={endHandwriting}
+              className="w-full h-80 border border-gray-200 rounded-xl bg-white cursor-crosshair"
+              style={{ touchAction: 'none' }}
+            />
+            <div className="flex gap-2 mt-4">
+              <button
+                type="button"
+                onClick={resetHandwritingCanvas}
+                className="flex-1 py-2 border border-gray-300 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50"
+              >
+                クリア
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowHandwritingModal(false)}
+                className="flex-1 py-2 border border-gray-300 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={insertHandwritingImage}
+                disabled={handwritingSaving}
+                className="flex-1 py-2 bg-teal-500 text-white rounded-xl text-sm font-semibold hover:bg-teal-600 disabled:opacity-50"
+              >
+                {handwritingSaving ? '保存中...' : '完了'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -595,6 +760,14 @@ function StudentRoom() {
                   className="w-6 h-6 p-0 border-0 bg-transparent"
                 />
               </label>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => { rememberNoteSelection(); setShowHandwritingModal(true); }}
+                className="px-2 py-1 bg-white border border-gray-200 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-100"
+              >
+                手書き
+              </button>
             </div>
             <div
               ref={studentNoteRef}

@@ -30,6 +30,7 @@ model User {
   enrollments    Enrollment[]
   boardPosts     BoardPost[]
   studentNotes   StudentNote[]
+  noteImages     StudentNoteImage[]
   checkResponses UnderstandingCheckResponse[]
   notifications  Notification[]
 }
@@ -67,6 +68,7 @@ model Room {
   enrollments        Enrollment[]
   boardPosts         BoardPost[]
   studentNotes       StudentNote[]
+  noteImages         StudentNoteImage[]
   understandingCheck UnderstandingCheck?
 }
 
@@ -128,6 +130,18 @@ model StudentNote {
   updatedAt DateTime @updatedAt
 
   @@unique([userId, roomId])
+}
+
+model StudentNoteImage {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roomId    String
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  fileName  String
+  mimeType  String
+  size      Int
+  createdAt DateTime @default(now())
 }
 
 model UnderstandingCheck {
