@@ -224,7 +224,6 @@ export default function SchoolAdminPage() {
                     max={getRoleValidation(role).max} 
                     placeholder={`自動 (${getRoleValidation(role).min}〜)`}
                     className="w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
-                  {/* <p className="text-[10px] text-gray-400 mt-1">{getRoleValidation(role).label}</p> */}
                 </div>
               </div>
               {error && <p className="text-red-500 text-sm">{error}</p>}
@@ -259,8 +258,6 @@ export default function SchoolAdminPage() {
                   max={getRoleValidation(role).max} 
                   placeholder={`自動 (${getRoleValidation(role).min}〜)`}
                   className="w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
-                {/* <p className="text-[10px] text-gray-400 mt-1">{getRoleValidation(role).label}</p> */}
-              </div>
               {error && <p className="text-red-500 text-sm">{error}</p>}
               <button onClick={createBulk}
                 disabled={loading || bulkNames.split('\n').filter((n) => n.trim()).length === 0}
