@@ -38,6 +38,22 @@ export default function SchoolAdminPage() {
   // formKey を変化させることでフォームコンポーネントをリセットする
   const [formKey, setFormKey] = useState(0);
 
+  // ロールに応じたID番号の範囲を返す
+  const getRoleValidation = (r: 'TEACHER' | 'STUDENT') => {
+    if (r === 'TEACHER') return { min: 90000001, max: 99999999, label: '90000001 〜 99999999' };
+    return { min: 10000001, max: 89999999, label: '10000001 〜 89999999' };
+  };
+
+  // 入力されたID番号が範囲内に収まっているかチェックする
+  const validateSeq = (seq: string, r: 'TEACHER' | 'STUDENT') => {
+    if (!seq) return null; // 省略時はAPIの自動採番に任せるのでOK
+    const n = parseInt(seq);
+    if (isNaN(n)) return '正しい数値を入力してください';
+    const { min, max } = getRoleValidation(r);
+    if (n < min || n > max) return `ID番号は ${min} 〜 ${max} の範囲で指定してください`;
+    return null;
+  };
+
   // マウント時: ロール確認（SCHOOL_ADMIN 以外は /home へリダイレクト）
   useEffect(() => {
     fetch('/api/auth/me').then(async (res) => {
@@ -64,6 +80,14 @@ export default function SchoolAdminPage() {
   // 1 人追加: displayName・role・startSeq を POST して新規ユーザーを作成する
   const createSingle = async () => {
     if (!displayName.trim()) return;
+
+    // 手動入力された番号の範囲チェック
+    const validationError = validateSeq(startSeq, role);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    
     setLoading(true); setError('');
     const body: Record<string, unknown> = { displayName, role };
     const n = parseInt(startSeq);
@@ -89,6 +113,13 @@ export default function SchoolAdminPage() {
   const createBulk = async () => {
     const names = bulkNames.split('\n').map((n) => n.trim()).filter(Boolean);
     if (names.length === 0) return;
+    // 一括追加の開始番号の範囲チェック
+    const validationError = validateSeq(bulkStartSeq, role);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
     setLoading(true); setError(''); setBulkResult(null);
 
     const body: Record<string, unknown> = { names, role };
@@ -184,9 +215,14 @@ export default function SchoolAdminPage() {
                 </div>
                 <div>
                   {/* ID 番号の指定（省略時は自動採番） */}
-                  <label className="block text-sm text-gray-600 mb-1">ID番号（任意）</label>
+                  <label className="block text-sm text-gray-600 mb-1">
+                    ID番号（任意: <span className="text-[10px] text-gray-400">{getRoleValidation(role).label}</span>）
+                  </label>
                   <input value={startSeq} onChange={(e) => setStartSeq(e.target.value)}
-                    type="number" min={1} placeholder="自動"
+                    type="number" 
+                    min={getRoleValidation(role).min} 
+                    max={getRoleValidation(role).max} 
+                    placeholder={`自動 (${getRoleValidation(role).min}〜)`}
                     className="w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
                 </div>
               </div>
@@ -212,12 +248,16 @@ export default function SchoolAdminPage() {
                   {bulkNames.split('\n').filter((n) => n.trim()).length} 人
                 </p>
               </div>
-              <div className="w-48">
-                <label className="block text-sm text-gray-600 mb-1">開始ID番号（任意）</label>
+              <div className="w-56">
+                <label className="block text-sm text-gray-600 mb-1">
+                  ID番号（任意: <span className="text-[10px] text-gray-400">{getRoleValidation(role).label}</span>）
+                </label>
                 <input value={bulkStartSeq} onChange={(e) => setBulkStartSeq(e.target.value)}
-                  type="number" min={1} placeholder="自動（続き番号）"
+                  type="number" 
+                  min={getRoleValidation(role).min} 
+                  max={getRoleValidation(role).max} 
+                  placeholder={`自動 (${getRoleValidation(role).min}〜)`}
                   className="w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
-              </div>
               {error && <p className="text-red-500 text-sm">{error}</p>}
               <button onClick={createBulk}
                 disabled={loading || bulkNames.split('\n').filter((n) => n.trim()).length === 0}
