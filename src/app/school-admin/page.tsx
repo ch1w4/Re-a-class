@@ -253,38 +253,40 @@ export default function SchoolAdminPage() {
                   ID番号（任意: <span className="text-[10px] text-gray-400">{getRoleValidation(role).label}</span>）
                 </label>
                 <input value={bulkStartSeq} onChange={(e) => setBulkStartSeq(e.target.value)}
-                  type="number" 
-                  min={getRoleValidation(role).min} 
-                  max={getRoleValidation(role).max} 
+                  type="number"
+                  min={getRoleValidation(role).min}
+                  max={getRoleValidation(role).max}
                   placeholder={`自動 (${getRoleValidation(role).min}〜)`}
                   className="w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
-              {error && <p className="text-red-500 text-sm">{error}</p>}
-              <button onClick={createBulk}
-                disabled={loading || bulkNames.split('\n').filter((n) => n.trim()).length === 0}
-                className="px-4 py-2 bg-teal-600 text-white rounded-xl text-sm font-bold hover:bg-teal-700 disabled:opacity-50 transition">
-                {loading ? '作成中...' : '一括追加'}
-              </button>
+              </div>
 
-              {/* 作成結果テーブル: ID と氏名を一覧表示（初期パスワードは ID と同一） */}
-              {bulkResult && (
-                <div className="mt-4 bg-teal-50 border border-teal-200 rounded-xl p-4">
-                  <p className="text-sm font-bold text-teal-700 mb-2">{bulkResult.length}人を作成しました（初期パスワード = ID）</p>
-                  <div className="max-h-48 overflow-y-auto">
-                    <table className="w-full text-xs">
-                      <thead><tr className="text-teal-600"><th className="text-left pb-1">ID</th><th className="text-left pb-1">氏名</th></tr></thead>
-                      <tbody>
-                        {bulkResult.map((u) => (
-                          <tr key={u.id} className="border-t border-teal-100">
-                            <td className="py-1 font-mono text-blue-700">{u.id}</td>
-                            <td className="py-1">{u.displayName}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+            {error && <p className="text-red-500 text-sm">{error}</p>}
+            <button onClick={createBulk}
+              disabled={loading || bulkNames.split('\n').filter((n) => n.trim()).length === 0}
+              className="px-4 py-2 bg-teal-600 text-white rounded-xl text-sm font-bold hover:bg-teal-700 disabled:opacity-50 transition">
+              {loading ? '作成中...' : '一括追加'}
+            </button>
+
+            {/* 作成結果テーブル: ID と氏名を一覧表示（初期パスワードは ID と同一） */}
+            {bulkResult && (
+              <div className="mt-4 bg-teal-50 border border-teal-200 rounded-xl p-4">
+                <p className="text-sm font-bold text-teal-700 mb-2">{bulkResult.length}人を作成しました（初期パスワード = ID）</p>
+                <div className="max-h-48 overflow-y-auto">
+                  <table className="w-full text-xs">
+                    <thead><tr className="text-teal-600"><th className="text-left pb-1">ID</th><th className="text-left pb-1">氏名</th></tr></thead>
+                    <tbody>
+                      {bulkResult.map((u) => (
+                        <tr key={u.id} className="border-t border-teal-100">
+                          <td className="py-1 font-mono text-blue-700">{u.id}</td>
+                          <td className="py-1">{u.displayName}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
+          </div>
           )}
         </section>
 
