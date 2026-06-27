@@ -24,29 +24,23 @@ const buildIncludeAll = (userId?: string) => ({
   },
   teacher: { select: { displayName: true } },
   enrollments: { select: { userId: true } },
-<<<<<<< Updated upstream
-  // タイミング情報と集計結果を含める（個別の回答内容は含める）
-  understandingCheck: { 
-    select: { 
-      scheduledAt: true, 
-      notifiedAt: true, 
-      tallyAt: true, 
-      talliedAt: true, 
+  // タイミング情報と集計結果を含める
+  understandingCheck: {
+    select: {
+      scheduledAt: true,
+      notifiedAt: true,
+      tallyAt: true,
+      talliedAt: true,
       resultBody: true,
       responses: {
         select: {
           id: true,
-          comment: true
-        }
-      }
-    } 
+          comment: true,
+        },
+      },
+    },
   },
-};
-=======
-  // タイミング情報と集計結果を含める（個別の回答内容は含めない）
-  understandingCheck: { select: { scheduledAt: true, notifiedAt: true, tallyAt: true, talliedAt: true, resultBody: true } },
 });
->>>>>>> Stashed changes
 
 export async function GET(
   request: NextRequest,

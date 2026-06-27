@@ -29,11 +29,8 @@ model User {
   createdRooms   Room[]                       @relation("TeacherRooms")
   enrollments    Enrollment[]
   boardPosts     BoardPost[]
-<<<<<<< Updated upstream
   studentNotes   StudentNote[]
-=======
   surveyResponses SurveyResponse[]
->>>>>>> Stashed changes
   checkResponses UnderstandingCheckResponse[]
   notifications  Notification[]
 }
