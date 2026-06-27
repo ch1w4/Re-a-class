@@ -11,9 +11,17 @@ import { requireAuth } from '@/lib/requireAuth';
 export const dynamic = 'force-dynamic';
 
 // GET でルームデータを取得する際に常に含めるリレーション定義
-const includeAll = {
+const buildIncludeAll = (userId?: string) => ({
   reactions: { orderBy: { timestamp: 'asc' as const } },
-  surveys: { include: { options: true }, orderBy: { createdAt: 'asc' as const } },
+  surveys: {
+    include: {
+      options: { orderBy: { sortOrder: 'asc' as const } },
+      responses: userId
+        ? { where: { userId }, select: { id: true, optionId: true } }
+        : { select: { id: true, optionId: true } },
+    },
+    orderBy: { createdAt: 'asc' as const },
+  },
   teacher: { select: { displayName: true } },
   enrollments: { select: { userId: true } },
   // タイミング情報と集計結果を含める（個別の回答内容は含める）
@@ -32,17 +40,17 @@ const includeAll = {
       }
     } 
   },
-};
+});
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { roomId: string } }
 ) {
   // 全ログイン済みユーザーが参照可能（ロール制限なし）
-  const { error } = await requireAuth(request);
+  const { error, user } = await requireAuth(request);
   if (error) return error;
 
-  const room = await prisma.room.findUnique({ where: { id: params.roomId }, include: includeAll });
+  const room = await prisma.room.findUnique({ where: { id: params.roomId }, include: buildIncludeAll(user!.id) });
   if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
   return NextResponse.json(room);
 }
@@ -74,7 +82,7 @@ export async function DELETE(
   const updated = await prisma.room.update({
     where: { id: params.roomId },
     data: { endedAt },
-    include: includeAll,
+    include: buildIncludeAll(user!.id),
   });
 
   // 授業終了と同時に理解度チェックを 4 日後にスケジュールする。

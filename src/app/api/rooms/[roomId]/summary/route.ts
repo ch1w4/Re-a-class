@@ -25,7 +25,7 @@ export async function POST(
 
   const room = await prisma.room.findUnique({
     where: { id: params.roomId },
-    include: { reactions: true, surveys: { include: { options: true } }, teacher: { select: { displayName: true } } },
+    include: { reactions: true, surveys: { include: { options: { orderBy: { sortOrder: 'asc' } } } }, teacher: { select: { displayName: true } } },
   });
   if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
   if (user!.role === 'TEACHER' && room.teacherId !== user!.id) {

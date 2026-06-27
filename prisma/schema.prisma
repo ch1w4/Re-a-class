@@ -30,6 +30,7 @@ model User {
   enrollments    Enrollment[]
   boardPosts     BoardPost[]
   studentNotes   StudentNote[]
+  surveyResponses SurveyResponse[]
   checkResponses UnderstandingCheckResponse[]
   notifications  Notification[]
 }
@@ -97,14 +98,31 @@ model Survey {
   roomId    String
   room      Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
   options   SurveyOption[]
+  responses SurveyResponse[]
 }
 
 model SurveyOption {
   id       String @id @default(uuid())
   text     String
   votes    Int    @default(0)
+  sortOrder Int    @default(0)
   surveyId String
   survey   Survey @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  responses SurveyResponse[]
+}
+
+model SurveyResponse {
+  id         String       @id @default(uuid())
+  surveyId   String
+  survey     Survey       @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  optionId   String
+  option     SurveyOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User         @relation(fields: [userId], references: [id])
+  answeredAt DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  @@unique([surveyId, userId])
 }
 
 model BoardPost {

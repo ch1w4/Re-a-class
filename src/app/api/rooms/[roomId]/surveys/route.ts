@@ -32,9 +32,9 @@ export async function POST(
     data: {
       question: question.trim(),
       roomId: params.roomId,
-      options: { create: (options as string[]).filter((o) => o.trim()).map((text) => ({ text: text.trim() })) },
+      options: { create: (options as string[]).filter((o) => o.trim()).map((text, index) => ({ text: text.trim(), sortOrder: index })) },
     },
-    include: { options: true },
+    include: { options: { orderBy: { sortOrder: 'asc' } } },
   });
   return NextResponse.json(survey, { status: 201 });
 }
