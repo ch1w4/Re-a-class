@@ -5,6 +5,7 @@
 // 生徒: ルームID入力で授業参加 + 参加した講義一覧（終了済みは掲示板へのリンク付き）
 // 共通: ベルアイコンの通知ドロップダウン（未読バッジ表示）、10 秒ごとに通知を更新
 
+import Image from 'next/image';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 
@@ -131,7 +132,13 @@ export default function HomePage() {
           <div className="flex items-center gap-4">
             {/* ベルアイコン: 未読があれば赤バッジを表示。クリックでドロップダウン開閉 */}
             <button onClick={() => setShowNotif(!showNotif)} className="relative">
-              <span className="text-2xl">🔔</span>
+              <Image
+                src="/icons/bell.svg"
+                alt="Notifications"
+                width={24}
+                height={24}
+                className="w-6 h-6"
+              />
               {unread > 0 && (
                 <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">
                   {unread}
