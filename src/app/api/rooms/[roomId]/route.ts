@@ -7,13 +7,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';
+import { surveyOptionsOrderBy } from '@/lib/surveyOptions';
 
 export const dynamic = 'force-dynamic';
 
 // GET でルームデータを取得する際に常に含めるリレーション定義
 const includeAll = {
   reactions: { orderBy: { timestamp: 'asc' as const } },
-  surveys: { include: { options: true }, orderBy: { createdAt: 'asc' as const } },
+  surveys: { include: { options: { orderBy: surveyOptionsOrderBy } }, orderBy: { createdAt: 'asc' as const } },
   teacher: { select: { displayName: true } },
   enrollments: { select: { userId: true } },
   // タイミング情報と集計結果を含める（個別の回答内容は含める）
