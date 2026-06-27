@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAIClient, CHAT_MODEL } from '@/lib/ai';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';
+import { surveyOptionsOrderBy } from '@/lib/surveyOptions';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,7 +26,7 @@ export async function POST(
 
   const room = await prisma.room.findUnique({
     where: { id: params.roomId },
-    include: { reactions: true, surveys: { include: { options: true } }, teacher: { select: { displayName: true } } },
+    include: { reactions: true, surveys: { include: { options: { orderBy: surveyOptionsOrderBy } } }, teacher: { select: { displayName: true } } },
   });
   if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
   if (user!.role === 'TEACHER' && room.teacherId !== user!.id) {

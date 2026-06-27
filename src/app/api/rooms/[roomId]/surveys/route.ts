@@ -4,8 +4,10 @@
 // 作成後は isOpen=true で投票受付開始。授業終了後は作成不可。
 // ロール: TEACHER（自分のルームのみ）/ SCHOOL_ADMIN / SERVER_ADMIN
 import { NextRequest, NextResponse } from 'next/server';
+import { v4 as uuidv4 } from 'uuid';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';
+import { makeSurveyOptionId, surveyOptionsOrderBy } from '@/lib/surveyOptions';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,13 +30,21 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid survey data' }, { status: 400 });
   }
 
+  const surveyId = uuidv4();
+  const trimmedOptions = (options as string[]).filter((o) => o.trim()).map((text) => text.trim());
   const survey = await prisma.survey.create({
     data: {
+      id: surveyId,
       question: question.trim(),
       roomId: params.roomId,
-      options: { create: (options as string[]).filter((o) => o.trim()).map((text) => ({ text: text.trim() })) },
+      options: {
+        create: trimmedOptions.map((text, i) => ({
+          id: makeSurveyOptionId(surveyId, i),
+          text,
+        })),
+      },
     },
-    include: { options: true },
+    include: { options: { orderBy: surveyOptionsOrderBy } },
   });
   return NextResponse.json(survey, { status: 201 });
 }
