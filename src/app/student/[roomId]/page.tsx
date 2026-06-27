@@ -5,8 +5,6 @@
 //   - 5 種類のリアクション送信（理解した・わからない・質問あり・ゆっくり・速く）
 //   - アンケート回答・結果閲覧
 //   - 授業中メモ（DB保存）
-//   - 授業メモ（教師が書いた板書内容）の閲覧
-//   - 授業終了後: AI 要約・書き起こしの閲覧
 //   - 理解度チェック（授業終了 4 日後に通知 → スコア 1〜4 とコメントで回答）
 // 2 秒 polling でリアルタイム更新。参加登録（Enrollment）は入室時に自動実行。
 
@@ -23,7 +21,7 @@ interface SurveyOption { id: string; text: string; votes: number }
 interface Survey { id: string; question: string; options: SurveyOption[]; isOpen: boolean; createdAt: string }
 interface Room {
   id: string; name: string; createdAt: string; endedAt: string | null;
-  surveys: Survey[]; summary: string;
+  surveys: Survey[];
   teacher: { displayName: string };
 }
 interface BoardPost { id: string; content: string; authorLabel: string; createdAt: string }
@@ -109,11 +107,20 @@ function StudentRoom() {
   // enroll は idempotent なので複数回呼んでも安全。
   useEffect(() => {
     fetch('/api/auth/me').then(async (res) => {
-      if (res.status === 401) { router.replace('/login'); return; }
+      if (!res.ok) { router.replace('/login'); return; }
       const data = await res.json();
-      setMe(data);
+      if (data.role !== 'STUDENT') { router.replace('/home'); return; }
+
       // 入室を記録する（学習履歴と理解度チェック対象の決定に使われる）
-      await fetch(`/api/rooms/${roomId}/enroll`, { method: 'POST' });
+      const enrollRes = await fetch(`/api/rooms/${roomId}/enroll`, { method: 'POST' });
+      if (!enrollRes.ok) {
+        setError(enrollRes.status === 403 ? '終了済みのルームには新しく参加できません' : 'ルームが見つかりません');
+        setLoading(false);
+        return;
+      }
+
+      // 参加登録完了後にルーム取得を開始し、未参加状態での取得競合を防ぐ。
+      setMe(data);
     });
   }, [roomId, router]);
 

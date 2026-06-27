@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import QRCode from 'qrcode';
 import { requireAuth } from '@/lib/requireAuth';
+import { getRoomScope, isRoomOwner } from '@/lib/roomAuthorization';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,8 +13,13 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { roomId: string } }
 ) {
-  const { error } = await requireAuth(request);
+  const { error, user } = await requireAuth(request, ['TEACHER']);
   if (error) return error;
+
+  const room = await getRoomScope(params.roomId, user!.id);
+  if (!room || !isRoomOwner(user!, room)) {
+    return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+  }
 
   // リクエスト元のホスト（origin）を使って絶対 URL を生成する
   const origin = request.nextUrl.origin;

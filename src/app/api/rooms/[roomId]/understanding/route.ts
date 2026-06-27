@@ -15,11 +15,12 @@
 //   score 1=よく理解できた / 2=だいたい理解できた / 3=あまり理解できなかった / 4=全然理解できなかった
 //   score 3/4 の生徒のみコメントを送信する（フロント側で制御、サーバー側は保存するだけ）。
 //
-// ロール: GET = 全ログイン済みユーザー、POST = STUDENT のみ
+// ロール: GET / POST = 参加済み STUDENT のみ
 // スケジュール: 授業終了の 4 日後に通知 → 提出期限は通知当日の深夜 0 時（UTC）
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';
+import { getRoomScope, isEnrolledStudent } from '@/lib/roomAuthorization';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,9 +28,13 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { roomId: string } }
 ) {
-  // 全ログイン済みユーザーが参照可能（教師も生徒もタイミングを確認できる）
-  const { error, user } = await requireAuth(request);
+  const { error, user } = await requireAuth(request, ['STUDENT']);
   if (error) return error;
+
+  const room = await getRoomScope(params.roomId, user!.id);
+  if (!room || !isEnrolledStudent(user!, room)) {
+    return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+  }
 
   // responses は自分の回答のみ取得（answered フラグの判定に使用、内容は不要）
   const check = await prisma.understandingCheck.findUnique({
@@ -64,6 +69,11 @@ export async function POST(
   // 回答できるのは STUDENT のみ（教師・管理者は回答不可）
   const { error, user } = await requireAuth(request, ['STUDENT']);
   if (error) return error;
+
+  const room = await getRoomScope(params.roomId, user!.id);
+  if (!room || !isEnrolledStudent(user!, room)) {
+    return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+  }
 
   // チェックの存在確認（notifiedAt がない = まだ通知されていない → 回答不可）
   const check = await prisma.understandingCheck.findUnique({ where: { roomId: params.roomId } });

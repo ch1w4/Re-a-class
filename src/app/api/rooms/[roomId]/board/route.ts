@@ -1,13 +1,14 @@
 // 授業後の匿名掲示板 API
 // GET  /api/rooms/[roomId]/board — 投稿一覧を取得。授業終了後のみ閲覧可能。
 //   STUDENT は authorLabel に匿名ラベル（SHA256(userId:roomId) から生成）を使用。
-//   SCHOOL_ADMIN / SERVER_ADMIN は実名表示（管理者モード）。
+//   SCHOOL_ADMIN は同一学校の投稿者を実名表示（管理者モード）。
 // POST /api/rooms/[roomId]/board — 生徒が感想・質問を投稿する。授業終了後のみ。
-// ロール: GET = STUDENT / SCHOOL_ADMIN / SERVER_ADMIN、POST = STUDENT のみ
+// ロール: GET = 参加済み STUDENT / 同一学校 SCHOOL_ADMIN、POST = 参加済み STUDENT
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';
 import { createHash } from 'crypto';
+import { getRoomScope, isEnrolledStudent, isSchoolRoomAdmin } from '@/lib/roomAuthorization';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,11 +29,13 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { roomId: string } }
 ) {
-  const { error, user } = await requireAuth(request, ['STUDENT', 'SCHOOL_ADMIN', 'SERVER_ADMIN']);
+  const { error, user } = await requireAuth(request, ['STUDENT', 'SCHOOL_ADMIN']);
   if (error) return error;
 
-  const room = await prisma.room.findUnique({ where: { id: params.roomId } });
-  if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+  const room = await getRoomScope(params.roomId, user!.id);
+  if (!room || (!isEnrolledStudent(user!, room) && !isSchoolRoomAdmin(user!, room))) {
+    return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+  }
   // 授業終了前は掲示板を閲覧不可（授業中のネタバレ・荒らし防止）
   if (!room.endedAt) return NextResponse.json({ error: '授業終了後のみ閲覧できます' }, { status: 403 });
 
@@ -42,7 +45,7 @@ export async function GET(
     orderBy: { createdAt: 'asc' },
   });
 
-  const isAdmin = user!.role === 'SCHOOL_ADMIN' || user!.role === 'SERVER_ADMIN';
+  const isAdmin = user!.role === 'SCHOOL_ADMIN';
 
   return NextResponse.json(posts.map((p) => ({
     id: p.id,
@@ -62,8 +65,10 @@ export async function POST(
   const { error, user } = await requireAuth(request, ['STUDENT']);
   if (error) return error;
 
-  const room = await prisma.room.findUnique({ where: { id: params.roomId } });
-  if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+  const room = await getRoomScope(params.roomId, user!.id);
+  if (!room || !isEnrolledStudent(user!, room)) {
+    return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+  }
   // 授業終了前の投稿は拒否（終了後専用の掲示板のため）
   if (!room.endedAt) return NextResponse.json({ error: '授業終了後のみ投稿できます' }, { status: 403 });
 
