@@ -10,8 +10,15 @@
 //   - 理解度チェック（授業終了 4 日後に通知 → スコア 1〜4 とコメントで回答）
 // 2 秒 polling でリアルタイム更新。参加登録（Enrollment）は入室時に自動実行。
 
-import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
+import { Suspense, useState, useEffect, useCallback, useRef, type ComponentType } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { ChartBarIcon } from '@/components/icons/chartBarIcon';
+import { CheckCircleIcon } from '@/components/icons/checkCircleIcon';
+import { ClipboardIcon } from '@/components/icons/clipboardIcon';
+import { HandThumbUpIcon } from '@/components/icons/handThumbUpIcon';
+import { AirPlaneIcon } from '@/components/icons/airPlaneIcon';
+import { NoSymbolIcon } from '@/components/icons/nosymbolIcon';
+import { PencilSquareIcon } from '@/components/icons/pencilSquareIcon';
 
 type ReactionType = 'understood' | 'confused' | 'question' | 'slow' | 'fast';
 // タブ ID の型: 授業中は reaction/memo/survey、終了後は board が追加、理解度チェック期間中は understanding が追加
@@ -444,12 +451,12 @@ function StudentRoom() {
 
   // タブリスト: 授業終了後に board タブ、チェック期間中に understanding タブが追加される
   // 要約は教師フィードバック専用のため生徒には表示しない
-  const tabs: { id: Tab; label: string; emoji: string }[] = [
-    { id: 'reaction', label: 'リアクション', emoji: '👍' },
-    { id: 'memo',     label: 'メモ',         emoji: '📝' },
-    { id: 'survey',   label: 'アンケート',   emoji: '📊' },
-    ...(isEnded ? [{ id: 'board' as Tab, label: '掲示板', emoji: '📌' }] : []),
-    ...(understandingActive ? [{ id: 'understanding' as Tab, label: '理解度', emoji: '📋' }] : []),
+  const tabs: { id: Tab; label: string; icon: ComponentType<{ className?: string }> }[] = [
+    { id: 'reaction', label: 'リアクション', icon: HandThumbUpIcon },
+    { id: 'memo',     label: 'メモ',         icon: PencilSquareIcon },
+    { id: 'survey',   label: 'アンケート',   icon: ChartBarIcon },
+    ...(isEnded ? [{ id: 'board' as Tab, label: '掲示板', icon: AirPlaneIcon }] : []),
+    ...(understandingActive ? [{ id: 'understanding' as Tab, label: '理解度', icon: ClipboardIcon }] : []),
   ];
 
   return (
@@ -489,19 +496,19 @@ function StudentRoom() {
         const t = understandingTiming;
         if (t.talliedAt) return (
           <div className="bg-purple-50 border-b border-purple-200 px-4 py-2 flex items-center justify-center gap-2 text-xs text-purple-700">
-            <span>📋</span>
+            <ClipboardIcon className="w-5 h-5 text-slate-500" />
             <span><span className="font-semibold">理解度チェック</span> 結果は先生に届いています</span>
           </div>
         );
         if (t.notifiedAt && t.tallyAt) return (
           <div className="bg-orange-50 border-b border-orange-200 px-4 py-2 flex items-center justify-center gap-2 text-xs text-orange-700">
-            <span>📋</span>
+            <ClipboardIcon className="w-5 h-5 text-slate-500" />
             <span><span className="font-semibold">理解度チェック受付中</span> — 提出期限: <span className="font-bold">{timeUntil(t.tallyAt)}</span></span>
           </div>
         );
         if (t.scheduledAt) return (
           <div className="bg-blue-50 border-b border-blue-200 px-4 py-2 flex items-center justify-center gap-2 text-xs text-blue-700">
-            <span>📋</span>
+            <ClipboardIcon className="w-5 h-5 text-slate-500" />
             <span><span className="font-semibold">理解度チェック</span> <span className="font-bold">{timeUntil(t.scheduledAt)}</span>に開始予定</span>
           </div>
         );
@@ -519,11 +526,13 @@ function StudentRoom() {
               <button
                 key={t.id}
                 onClick={() => setTab(t.id)}
-                className={`flex-shrink-0 flex-1 py-3 text-xs font-semibold transition-all relative min-w-[60px] ${
+                className={`group flex-shrink-0 flex-1 py-3 text-xs font-semibold transition-all relative min-w-[60px] ${
                   tab === t.id ? 'text-teal-600 border-b-2 border-teal-600' : 'text-gray-400 hover:text-gray-600'
                 }`}
               >
-                <span className="block text-lg leading-none mb-0.5">{t.emoji}</span>
+                <span className="block mb-0.5 flex justify-center">
+                  <t.icon className={`w-5 h-5 transition-colors duration-200${tab === t.id ? '' : ' group-hover:text-gray-600'}`} />
+                </span>
                 {t.label}
                 {hasBadge && <span className="absolute top-1 right-2 w-2 h-2 bg-red-500 rounded-full"></span>}
               </button>
@@ -541,7 +550,9 @@ function StudentRoom() {
             {isEnded ? (
               // 授業終了後はリアクション送信不可
               <div className="text-center py-16">
-                <div className="text-5xl mb-4">🏁</div>
+                <div className="flex justify-center mb-4">
+                  <NoSymbolIcon className="w-20 h-20 text-red-500" />
+                </div>
                 <p className="text-gray-500 font-semibold">授業は終了しました</p>
                 <p className="text-gray-400 text-sm mt-2">リアクションの送信は締め切られました</p>
               </div>
@@ -644,7 +655,9 @@ function StudentRoom() {
           <div className="space-y-4">
             {room.surveys.length === 0 ? (
               <div className="text-center py-16">
-                <div className="text-5xl mb-4">📊</div>
+                <div className="flex justify-center mb-4">
+                  <ChartBarIcon className="w-12 h-12 text-black" />
+                </div>
                 <p className="text-gray-500 font-semibold">アンケートなし</p>
                 <p className="text-gray-400 text-sm mt-2">先生がアンケートを作成すると表示されます</p>
               </div>
@@ -705,8 +718,9 @@ function StudentRoom() {
         {/* ===== 掲示板タブ: 授業終了後のみ表示される匿名掲示板 ===== */}
         {tab === 'board' && (
           <div>
-            <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3 mb-4 text-xs text-indigo-700">
-              📌 授業終了後の匿名掲示板です。投稿者は匿名で表示されます。
+            <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3 mb-4 text-xs text-indigo-700 flex items-center gap-2">
+              <AirPlaneIcon className="w-5 h-5 shrink-0" />
+              <span>授業終了後の匿名掲示板です。投稿者は匿名で表示されます。</span>
             </div>
             <div className="space-y-3 mb-4">
               {boardPosts.length === 0 ? (
@@ -754,7 +768,9 @@ function StudentRoom() {
             {understandingAnswered ? (
               // 回答済み画面
               <div className="text-center py-16">
-                <div className="text-5xl mb-4">✅</div>
+                <div className="flex justify-center mb-4">
+                  <CheckCircleIcon className="w-12 h-12 text-green-400" />
+                </div>
                 <p className="text-gray-600 font-semibold">回答済みです</p>
                 <p className="text-gray-400 text-sm mt-2">ご協力ありがとうございました</p>
               </div>
