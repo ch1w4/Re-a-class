@@ -3,12 +3,13 @@
 // GET  /api/rooms — ロールによって返すデータが変わる
 //   TEACHER      : 自分が作成したルーム一覧（参加者数付き）
 //   STUDENT      : 自分が参加（Enrollment）したルーム一覧（担当教師名付き）
-//   SCHOOL_ADMIN/SERVER_ADMIN : 同一学校内の全ルーム一覧
+//   SCHOOL_ADMIN : 同一学校内の全ルーム一覧
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';
 import { surveyOptionsOrderBy } from '@/lib/surveyOptions';
 import { v4 as uuidv4 } from 'uuid';
+import { roomHeaderSelect, teacherRoomListSelect } from '@/lib/roomProjections';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,14 +30,14 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  const { error, user } = await requireAuth(request);
+  const { error, user } = await requireAuth(request, ['TEACHER', 'STUDENT', 'SCHOOL_ADMIN']);
   if (error) return error;
 
   // 教師: 自分が作成したルームを新しい順で返す（参加者数付き）
   if (user!.role === 'TEACHER') {
     const rooms = await prisma.room.findMany({
-      where: { teacherId: user!.id },
-      include: { _count: { select: { enrollments: true } } },
+      where: { teacherId: user!.id, schoolId: user!.schoolId },
+      select: teacherRoomListSelect,
       orderBy: { createdAt: 'desc' },
     });
     return NextResponse.json(rooms);
@@ -45,13 +46,10 @@ export async function GET(request: NextRequest) {
   // 生徒: 自分が参加（Enrollment）したルームを最新参加順で返す（教師名付き）
   if (user!.role === 'STUDENT') {
     const enrollments = await prisma.enrollment.findMany({
-      where: { userId: user!.id },
+      where: { userId: user!.id, room: { schoolId: user!.schoolId } },
       include: {
         room: {
-          include: {
-            teacher: { select: { displayName: true } },
-            _count: { select: { enrollments: true } },
-          },
+          select: roomHeaderSelect,
         },
       },
       orderBy: { joinedAt: 'desc' },
@@ -61,10 +59,10 @@ export async function GET(request: NextRequest) {
   }
 
   // 管理者: 同一学校内の全ルームを新しい順で返す（担当教師名付き）
-  if (user!.role === 'SCHOOL_ADMIN' || user!.role === 'SERVER_ADMIN') {
+  if (user!.role === 'SCHOOL_ADMIN') {
     const rooms = await prisma.room.findMany({
       where: { schoolId: user!.schoolId },
-      include: { teacher: { select: { displayName: true } }, _count: { select: { enrollments: true } } },
+      select: roomHeaderSelect,
       orderBy: { createdAt: 'desc' },
     });
     return NextResponse.json(rooms);

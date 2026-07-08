@@ -3,13 +3,14 @@
 // Groq llama-3.3-70b-versatile を使って教師向けフィードバックレポートを Markdown 形式で自動生成し DB に保存する。
 // プロンプトには「音声書き起こし・リアクション集計・アンケート結果」を含める。
 // 生成内容: 授業の振り返り・生徒の反応傾向・次回授業への改善アドバイス（教師が読む想定）
-// ロール: TEACHER（自分のルームのみ）/ SCHOOL_ADMIN / SERVER_ADMIN
+// ロール: TEACHER（自分のルームのみ）
 // 環境変数 GROQ_API_KEY が必要（未設定なら 500 を返す）。
 import { NextRequest, NextResponse } from 'next/server';
 import { createAIClient, CHAT_MODEL } from '@/lib/ai';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';
 import { surveyOptionsOrderBy } from '@/lib/surveyOptions';
+import { getRoomScope, isRoomOwner } from '@/lib/roomAuthorization';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,8 +18,13 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { roomId: string } }
 ) {
-  const { error, user } = await requireAuth(request, ['TEACHER', 'SCHOOL_ADMIN', 'SERVER_ADMIN']);
+  const { error, user } = await requireAuth(request, ['TEACHER']);
   if (error) return error;
+
+  const scope = await getRoomScope(params.roomId, user!.id);
+  if (!scope || !isRoomOwner(user!, scope)) {
+    return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+  }
 
   if (!process.env.GROQ_API_KEY) {
     return NextResponse.json({ error: 'GROQ_API_KEY が設定されていません' }, { status: 500 });
@@ -29,9 +35,6 @@ export async function POST(
     include: { reactions: true, surveys: { include: { options: { orderBy: surveyOptionsOrderBy } } }, teacher: { select: { displayName: true } } },
   });
   if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
-  if (user!.role === 'TEACHER' && room.teacherId !== user!.id) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
 
   const client = createAIClient();
   const counts = room.reactions.reduce<Record<string, number>>((acc, r) => { acc[r.type] = (acc[r.type] ?? 0) + 1; return acc; }, {});

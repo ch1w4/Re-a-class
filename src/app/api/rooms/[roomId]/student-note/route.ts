@@ -5,17 +5,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';
+import { getRoomScope, isEnrolledStudent } from '@/lib/roomAuthorization';
 
 export const dynamic = 'force-dynamic';
-
-async function findRoomForStudent(roomId: string, schoolId: string) {
-  const room = await prisma.room.findUnique({
-    where: { id: roomId },
-    select: { id: true, schoolId: true },
-  });
-  if (!room || room.schoolId !== schoolId) return null;
-  return room;
-}
 
 export async function GET(
   request: NextRequest,
@@ -24,8 +16,10 @@ export async function GET(
   const { error, user } = await requireAuth(request, ['STUDENT']);
   if (error) return error;
 
-  const room = await findRoomForStudent(params.roomId, user!.schoolId);
-  if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+  const room = await getRoomScope(params.roomId, user!.id);
+  if (!room || !isEnrolledStudent(user!, room)) {
+    return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+  }
 
   const note = await prisma.studentNote.findUnique({
     where: { userId_roomId: { userId: user!.id, roomId: params.roomId } },
@@ -45,8 +39,10 @@ export async function PATCH(
   const { error, user } = await requireAuth(request, ['STUDENT']);
   if (error) return error;
 
-  const room = await findRoomForStudent(params.roomId, user!.schoolId);
-  if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+  const room = await getRoomScope(params.roomId, user!.id);
+  if (!room || !isEnrolledStudent(user!, room)) {
+    return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+  }
 
   const { body } = await request.json().catch(() => ({}));
   if (typeof body !== 'string') {

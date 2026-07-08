@@ -1,31 +1,26 @@
 // ルーム詳細取得・授業終了・ルーム削除 API
-// GET    /api/rooms/[roomId]             — リアクション・アンケートを含む全データを返す
+// GET    /api/rooms/[roomId]             — ロールに応じた最小限のルーム情報を返す
 // DELETE /api/rooms/[roomId]             — endedAt をセットして授業を終了する。授業終了と同時に
 //                                         「理解度チェック」を 4 日後にスケジュールする。
 // DELETE /api/rooms/[roomId]?mode=delete — ルームを物理削除する（cascade でデータも全削除）
-//                                         ロール: TEACHER（自分のルームのみ）/ SCHOOL_ADMIN / SERVER_ADMIN
+//                                         ロール: TEACHER（自分のルームのみ）
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';
 import { surveyOptionsOrderBy } from '@/lib/surveyOptions';
+import { getRoomScope, isEnrolledStudent, isRoomOwner, isSchoolRoomAdmin } from '@/lib/roomAuthorization';
+import { roomHeaderSelect, buildStudentRoomDetailSelect } from '@/lib/roomProjections';
 
 export const dynamic = 'force-dynamic';
 
-// GET でルームデータを取得する際に常に含めるリレーション定義
-const buildIncludeAll = (userId?: string) => ({
+// 教師本人だけに返す授業運営用データ
+const teacherInclude = {
   reactions: { orderBy: { timestamp: 'asc' as const } },
   surveys: {
-    include: {
-      options: { orderBy: surveyOptionsOrderBy },
-      responses: userId
-        ? { where: { userId }, select: { id: true, optionId: true } }
-        : { select: { id: true, optionId: true } },
-    },
+    include: { options: { orderBy: surveyOptionsOrderBy } },
     orderBy: { createdAt: 'asc' as const },
   },
   teacher: { select: { displayName: true } },
-  enrollments: { select: { userId: true } },
-  // タイミング情報と集計結果を含める
   understandingCheck: {
     select: {
       scheduledAt: true,
@@ -41,33 +36,58 @@ const buildIncludeAll = (userId?: string) => ({
       },
     },
   },
-});
+};
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { roomId: string } }
 ) {
-  // 全ログイン済みユーザーが参照可能（ロール制限なし）
-  const { error, user } = await requireAuth(request);
+  const { error, user } = await requireAuth(request, ['TEACHER', 'STUDENT', 'SCHOOL_ADMIN']);
   if (error) return error;
 
-  const room = await prisma.room.findUnique({ where: { id: params.roomId }, include: buildIncludeAll(user!.id) });
-  if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
-  return NextResponse.json(room);
+  const scope = await getRoomScope(params.roomId, user!.id);
+  if (!scope) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+
+  if (isRoomOwner(user!, scope)) {
+    const room = await prisma.room.findUnique({
+      where: { id: params.roomId },
+      include: teacherInclude,
+    });
+    if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+    return NextResponse.json(room);
+  }
+
+  if (isEnrolledStudent(user!, scope)) {
+    const room = await prisma.room.findUnique({
+      where: { id: params.roomId },
+      select: buildStudentRoomDetailSelect(user!.id),
+    });
+    if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+    return NextResponse.json(room);
+  }
+
+  if (isSchoolRoomAdmin(user!, scope)) {
+    const room = await prisma.room.findUnique({
+      where: { id: params.roomId },
+      select: roomHeaderSelect,
+    });
+    if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+    return NextResponse.json(room);
+  }
+
+  return NextResponse.json({ error: 'Room not found' }, { status: 404 });
 }
 
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { roomId: string } }
 ) {
-  const { error, user } = await requireAuth(request, ['TEACHER', 'SCHOOL_ADMIN', 'SERVER_ADMIN']);
+  const { error, user } = await requireAuth(request, ['TEACHER']);
   if (error) return error;
 
-  const room = await prisma.room.findUnique({ where: { id: params.roomId } });
-  if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
-  // TEACHER は自分が作成したルームのみ操作できる
-  if (user!.role === 'TEACHER' && room.teacherId !== user!.id) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  const room = await getRoomScope(params.roomId, user!.id);
+  if (!room || !isRoomOwner(user!, room)) {
+    return NextResponse.json({ error: 'Room not found' }, { status: 404 });
   }
 
   // ?mode=delete の場合はルームを物理削除する（cascade で関連データも全削除）
@@ -83,7 +103,7 @@ export async function DELETE(
   const updated = await prisma.room.update({
     where: { id: params.roomId },
     data: { endedAt },
-    include: buildIncludeAll(user!.id),
+    include: teacherInclude,
   });
 
   // 授業終了と同時に理解度チェックを 4 日後にスケジュールする。

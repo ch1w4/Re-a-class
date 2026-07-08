@@ -260,12 +260,12 @@ export default function SchoolAdminPage() {
                   className="w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
               </div>
 
-            {error && <p className="text-red-500 text-sm">{error}</p>}
-            <button onClick={createBulk}
-              disabled={loading || bulkNames.split('\n').filter((n) => n.trim()).length === 0}
-              className="px-4 py-2 bg-teal-600 text-white rounded-xl text-sm font-bold hover:bg-teal-700 disabled:opacity-50 transition">
-              {loading ? '作成中...' : '一括追加'}
-            </button>
+              {error && <p className="text-red-500 text-sm">{error}</p>}
+              <button onClick={createBulk}
+                disabled={loading || bulkNames.split('\n').filter((n) => n.trim()).length === 0}
+                className="px-4 py-2 bg-teal-600 text-white rounded-xl text-sm font-bold hover:bg-teal-700 disabled:opacity-50 transition">
+                {loading ? '作成中...' : '一括追加'}
+              </button>
 
             {/* 作成結果テーブル: ID と氏名を一覧表示（初期パスワードは ID と同一） */}
             {bulkResult && (

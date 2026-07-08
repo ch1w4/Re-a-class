@@ -2,7 +2,7 @@
 // 授業後の匿名掲示板ページ (/board/[roomId])
 // 授業終了後に生徒が感想・質問を匿名で投稿できる掲示板。
 // 生徒同士は匿名ラベル（「生徒A」等）で表示されるため、互いの発信者がわからない。
-// SCHOOL_ADMIN/SERVER_ADMIN は実名表示（管理者モード）。
+// 同一学校の SCHOOL_ADMIN は実名表示（管理者モード）。
 // TEACHER はアクセス不可（403 エラー表示）。
 // 投稿一覧は初回取得後も 3 秒ごとにポーリングして他者の投稿を反映する。
 
@@ -147,7 +147,7 @@ export default function BoardPage() {
 
   const isStudent = me?.role === 'STUDENT';
   // 管理者モード: 投稿者の実名を表示する（通常は匿名ラベル）
-  const isAdmin = me?.role === 'SCHOOL_ADMIN' || me?.role === 'SERVER_ADMIN';
+  const isAdmin = me?.role === 'SCHOOL_ADMIN';
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col max-w-2xl mx-auto">

@@ -3,12 +3,13 @@
 // 録音した音声ファイル（multipart/form-data の "audio" フィールド）を
 // Groq Whisper (whisper-large-v3-turbo) で日本語テキストに変換する。
 // 既存の transcript に追記する形で保存（複数回の録音に対応）。
-// ロール: TEACHER（自分のルームのみ）/ SCHOOL_ADMIN / SERVER_ADMIN
+// ロール: TEACHER（自分のルームのみ）
 // 環境変数 GROQ_API_KEY が必要。
 import { NextRequest, NextResponse } from 'next/server';
 import { createAIClient, WHISPER_MODEL } from '@/lib/ai';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';
+import { getRoomScope, isRoomOwner } from '@/lib/roomAuthorization';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,8 +17,13 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { roomId: string } }
 ) {
-  const { error, user } = await requireAuth(request, ['TEACHER', 'SCHOOL_ADMIN', 'SERVER_ADMIN']);
+  const { error, user } = await requireAuth(request, ['TEACHER']);
   if (error) return error;
+
+  const scope = await getRoomScope(params.roomId, user!.id);
+  if (!scope || !isRoomOwner(user!, scope)) {
+    return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+  }
 
   if (!process.env.GROQ_API_KEY) {
     return NextResponse.json({ error: 'GROQ_API_KEY が設定されていません' }, { status: 500 });
@@ -25,9 +31,6 @@ export async function POST(
 
   const room = await prisma.room.findUnique({ where: { id: params.roomId } });
   if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
-  if (user!.role === 'TEACHER' && room.teacherId !== user!.id) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
 
   const client = createAIClient();
   const formData = await request.formData();

@@ -1,10 +1,11 @@
 // アンケート締め切り API
 // POST /api/rooms/[roomId]/surveys/[surveyId]/close
 // isOpen を false にして投票受付を終了する。
-// ロール: TEACHER（自分のルームのみ）/ SCHOOL_ADMIN / SERVER_ADMIN
+// ロール: TEACHER（自分のルームのみ）
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';
+import { getRoomScope, isRoomOwner } from '@/lib/roomAuthorization';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,13 +13,12 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { roomId: string; surveyId: string } }
 ) {
-  const { error, user } = await requireAuth(request, ['TEACHER', 'SCHOOL_ADMIN', 'SERVER_ADMIN']);
+  const { error, user } = await requireAuth(request, ['TEACHER']);
   if (error) return error;
 
-  const room = await prisma.room.findUnique({ where: { id: params.roomId } });
-  if (!room) return NextResponse.json({ error: 'Room not found' }, { status: 404 });
-  if (user!.role === 'TEACHER' && room.teacherId !== user!.id) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  const room = await getRoomScope(params.roomId, user!.id);
+  if (!room || !isRoomOwner(user!, room)) {
+    return NextResponse.json({ error: 'Room not found' }, { status: 404 });
   }
 
   const survey = await prisma.survey.findUnique({ where: { id: params.surveyId } });

@@ -1,11 +1,12 @@
 // アンケート投票 API
 // POST /api/rooms/[roomId]/surveys/[surveyId]/answer
 // 選択肢の votes を 1 増やす。isOpen=false（締め切り済み）の場合は拒否。
-// ロール: STUDENT のみ。同一アンケートへの重複回答は拒否する。
+// ロール: 参加済みの STUDENT のみ。同一アンケートへの重複回答は拒否する。
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';
 import { Prisma } from '@prisma/client';
+import { getRoomScope, isEnrolledStudent } from '@/lib/roomAuthorization';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,6 +16,12 @@ export async function POST(
 ) {
   const { error, user } = await requireAuth(request, ['STUDENT']);
   if (error) return error;
+
+  const room = await getRoomScope(params.roomId, user!.id);
+  if (!room || !isEnrolledStudent(user!, room)) {
+    return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+  }
+  if (room.endedAt) return NextResponse.json({ error: 'Room has ended' }, { status: 403 });
 
   const survey = await prisma.survey.findUnique({ where: { id: params.surveyId } });
   if (!survey || survey.roomId !== params.roomId || !survey.isOpen) {
