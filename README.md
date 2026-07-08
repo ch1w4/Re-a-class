@@ -32,7 +32,7 @@
 - **ルーム参加** — ルーム ID 入力または QR スキャン（参加記録は自動保存）
 - **リアクション送信** — 匿名・何度でも送信可
 - **アンケート回答** — 受付中のみ回答可、結果はリアルタイム表示
-- **匿名掲示板** — 授業終了後に感想・質問を投稿（投稿者は匿名ラベルで表示）
+- **匿名掲示板** — 授業終了後に感想・質問を投稿（授業画面の「掲示板」タブ。投稿者は匿名ラベルで表示）
 - **理解度チェック** — 授業終了 4 日後に通知 → 当日中にスコア（1〜4）で回答
   - スコア 3/4（理解できなかった側）を選ぶと「何が理解できなかったか」入力欄が出現
   - 過半数が未理解の場合、コメントを AI が要約して教師に届く
@@ -41,7 +41,7 @@
 - 教師・生徒のユーザー登録（1 人 or 改行区切りの一括入力）
 - 開始 ID 番号の任意指定（省略時は最小未使用番号を自動採番）
 - ユーザー削除・パスワードリセット（パスワードをユーザー ID に戻す）
-- 授業後の匿名掲示板を管理者モードで閲覧（投稿者の実名表示）
+- 授業後の匿名掲示板を実名表示で確認（`/board` ページ、管理者専用）
 
 ### サーバー管理者（SERVER_ADMIN）
 - 学校の追加・削除（学校ごとにデータを完全分離）
@@ -66,7 +66,9 @@
 | ORM | Prisma 5 |
 | データベース | PostgreSQL 16 |
 | 認証 | 独自セッション（httpOnly Cookie + `crypto.scrypt` ハッシュ、7日有効） |
-| リアルタイム更新 | HTTP ポーリング（授業画面: 2 秒間隔 / 通知: 10 秒間隔） |
+| 認可 | ロール（`Role`）+ ルームの所有者・参加状態・所属学校に基づくアクセス制御。API は `requireAuth`、ページ遷移は各ルートの `layout.tsx` + `requirePageRole` で保護 |
+| リアルタイム更新 | HTTP ポーリング（授業画面: 2 秒間隔 / 掲示板・通知: 3〜10 秒間隔） |
+| テスト | Vitest（`npm test`） — 認可ロジックと API ルートの単体テスト |
 
 ### AI・外部サービス
 | 役割 | 技術 |
@@ -81,8 +83,6 @@
 |---|---|
 | コンテナ | Docker / Docker Compose |
 | 起動スクリプト | `docker-entrypoint.sh`（マイグレーション + 管理者初期化を自動実行） |
-
-> **注:** `package.json` に `@anthropic-ai/sdk` と `groq-sdk` が残っているが、どちらも現在は未使用（開発初期の名残）。
 
 ---
 
@@ -290,12 +290,24 @@ Re-a-class/
 │   ├── app/
 │   │   ├── page.tsx                              # ルート → /home にリダイレクト
 │   │   ├── login/page.tsx                        # ログインページ（全ロール共通）
-│   │   ├── home/page.tsx                         # ダッシュボード（教師・生徒）+ デモボタン
-│   │   ├── admin/page.tsx                        # サーバー管理パネル（SERVER_ADMIN）
-│   │   ├── school-admin/page.tsx                 # 学校管理パネル（SCHOOL_ADMIN）
-│   │   ├── teacher/[roomId]/page.tsx             # 教師用授業画面（録音・アンケート・理解度結果）
-│   │   ├── student/[roomId]/page.tsx             # 生徒用授業画面（リアクション・理解度チェック）
-│   │   ├── board/[roomId]/page.tsx               # 授業後の匿名掲示板
+│   │   ├── home/                                 # ダッシュボード（教師・生徒）+ デモボタン
+│   │   │   ├── layout.tsx                        # ロールガード（TEACHER/STUDENT のみ）
+│   │   │   └── page.tsx
+│   │   ├── admin/                                # サーバー管理パネル（SERVER_ADMIN 専用）
+│   │   │   ├── layout.tsx
+│   │   │   └── page.tsx
+│   │   ├── school-admin/                         # 学校管理パネル（SCHOOL_ADMIN 専用）
+│   │   │   ├── layout.tsx
+│   │   │   └── page.tsx
+│   │   ├── teacher/[roomId]/                     # 教師用授業画面（録音・アンケート・理解度結果）
+│   │   │   ├── layout.tsx                        # ロールガード（TEACHER のみ）
+│   │   │   └── page.tsx
+│   │   ├── student/[roomId]/                     # 生徒用授業画面（リアクション・掲示板・理解度チェック）
+│   │   │   ├── layout.tsx                        # ロールガード（STUDENT のみ）
+│   │   │   └── page.tsx
+│   │   ├── board/[roomId]/                       # 学校管理者向け: 掲示板の実名確認ページ
+│   │   │   ├── layout.tsx                        # ロールガード（SCHOOL_ADMIN のみ）
+│   │   │   └── page.tsx                          # 生徒向けの掲示板は student ページ内のタブに統合済み
 │   │   └── api/
 │   │       ├── auth/
 │   │       │   ├── login/route.ts                # POST ログイン（Cookie セット）
@@ -331,9 +343,16 @@ Re-a-class/
 │   ├── lib/
 │   │   ├── prisma.ts                             # Prisma Client シングルトン
 │   │   ├── auth.ts                               # scrypt ハッシュ・セッション管理
-│   │   ├── requireAuth.ts                        # API 認証チェックヘルパー
+│   │   ├── requireAuth.ts                        # API 認証・ロールチェックヘルパー
+│   │   ├── roomAuthorization.ts                  # ルーム単位の認可（所有者・参加済み生徒・同一学校管理者の判定）
+│   │   ├── roomProjections.ts                    # ロール別に安全なフィールドだけを返す Prisma select 定義
+│   │   ├── pageAuthorization.ts                  # ページごとのアクセス許可ロール定義（PAGE_ROLES）
+│   │   ├── requirePageRole.ts                    # ページ（layout.tsx）用のロールガード + リダイレクト
+│   │   ├── surveyOptions.ts                      # アンケート選択肢の表示順を安定させるユーティリティ
 │   │   ├── userId.ts                             # ユーザー ID 自動採番（最小未使用番号）
-│   │   └── ai.ts                                 # Groq AI クライアント共通設定
+│   │   ├── ai.ts                                 # Groq AI クライアント共通設定
+│   │   └── authorization.test.ts                 # 認可ロジックの単体テスト（Vitest）
+│   ├── components/icons/                         # 絵文字の代わりに使う SVG アイコンコンポーネント群
 │   └── middleware.ts                             # 全リクエストのセッション認証 + /login リダイレクト
 ├── prisma/
 │   ├── schema.prisma                             # DB スキーマ定義
@@ -357,7 +376,9 @@ Re-a-class/
 | `Enrollment` | 生徒とルームの参加記録（userId + roomId でユニーク制約） |
 | `Reaction` | リアクション（type 文字列で種別を保存、timestamp 付き） |
 | `Survey` / `SurveyOption` | アンケートと選択肢（SurveyOption.votes でリアルタイム集計） |
+| `SurveyResponse` | 生徒のアンケート回答記録（surveyId + userId でユニーク制約、重複回答を防止） |
 | `BoardPost` | 匿名掲示板の投稿（表示時に SHA256(userId:roomId) で匿名ラベル生成） |
+| `StudentNote` | 生徒の授業中メモ（userId + roomId でユニーク制約、本人にのみ表示） |
 | `UnderstandingCheck` | 理解度チェックのスケジュール管理と集計結果（resultBody に内訳 + AI 要約を保存） |
 | `UnderstandingCheckResponse` | 生徒の理解度チェック回答（score 1〜4 + comment） |
 | `Notification` | アプリ内通知（UNDERSTANDING_CHECK / UNDERSTANDING_RESULT） |
