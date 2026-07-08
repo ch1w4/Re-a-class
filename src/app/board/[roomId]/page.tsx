@@ -96,10 +96,10 @@ export default function BoardPage() {
   );
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col max-w-2xl mx-auto">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* ヘッダー: 授業名・教師名を表示 */}
       <header className="bg-indigo-600 text-white px-5 py-4 shadow-lg sticky top-0 z-10">
-        <div className="flex items-center justify-between">
+        <div className="max-w-2xl mx-auto flex items-center justify-between">
           <button onClick={() => router.push('/school-admin')} className="text-indigo-200 hover:text-white text-sm font-semibold">
             ← 管理画面
           </button>
@@ -113,7 +113,7 @@ export default function BoardPage() {
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 max-w-2xl mx-auto w-full p-4">
         {/* 管理者モードの説明バナー */}
         <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3 mb-4 text-xs text-indigo-700 flex items-center gap-2">
           <ClipboardIcon className="w-5 h-5 shrink-0 text-gray-400" />
@@ -148,7 +148,9 @@ export default function BoardPage() {
       {/* 投稿件数と操作不可の案内 */}
       {posts.length > 0 && (
         <div className="bg-white border-t border-gray-200 p-4 text-center text-xs text-gray-400">
-          {posts.length}件の投稿 · 管理者は投稿できません
+          <div className="max-w-2xl mx-auto">
+            {posts.length}件の投稿 · 管理者は投稿できません
+          </div>
         </div>
       )}
     </div>
