@@ -20,7 +20,8 @@ type Tab = 'reaction' | 'memo' | 'survey' | 'board' | 'understanding';
 
 interface Me { id: string; displayName: string; role: string }
 interface SurveyOption { id: string; text: string; votes: number }
-interface Survey { id: string; question: string; options: SurveyOption[]; isOpen: boolean; createdAt: string }
+interface SurveyResponse { id: string; optionId: string }
+interface Survey { id: string; question: string; options: SurveyOption[]; responses?: SurveyResponse[]; isOpen: boolean; createdAt: string }
 interface Room {
   id: string; name: string; createdAt: string; endedAt: string | null;
   surveys: Survey[]; summary: string;
@@ -77,7 +78,7 @@ function StudentRoom() {
   const [noteStyleState, setNoteStyleState] = useState({ bold: false, underline: false });
 
   // --- アンケート関連 ---
-  // answeredSurveys: このセッションで回答済みのアンケートID集合（二重回答防止のためローカル管理）
+  // answeredSurveys: 送信直後の楽観的 UI 用。最終判定は API から返る responses を使う。
   const [answeredSurveys, setAnsweredSurveys] = useState<Set<string>>(new Set());
 
   // --- 掲示板関連 ---
@@ -351,18 +352,26 @@ function StudentRoom() {
   };
 
   // アンケートに回答する。
-  // answeredSurveys にすでに存在すれば二重回答を防ぐ。
+  // DB 上の回答履歴と answeredSurveys にすでに存在すれば二重回答を防ぐ。
   // 楽観的 UI: API レスポンスを待たずに先に answeredSurveys を更新して UX を向上させる。
   const answerSurvey = async (surveyId: string, optionId: string) => {
-    if (answeredSurveys.has(surveyId) || room?.endedAt) return;
+    const survey = room?.surveys.find((s) => s.id === surveyId);
+    if ((survey?.responses?.length ?? 0) > 0 || answeredSurveys.has(surveyId) || room?.endedAt) return;
     setAnsweredSurveys((prev) => { const next = new Set(prev); next.add(surveyId); return next; });
-    await fetch(`/api/rooms/${roomId}/surveys/${surveyId}/answer`, {
+    const res = await fetch(`/api/rooms/${roomId}/surveys/${surveyId}/answer`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ optionId }),
     });
     fetchRoom(); // 投票数をリアルタイムで反映
-    showToast('回答しました！');
+    if (res.ok) {
+      showToast('回答しました！');
+    } else if (res.status === 409) {
+      showToast('すでに回答済みです');
+    } else {
+      setAnsweredSurveys((prev) => { const next = new Set(prev); next.delete(surveyId); return next; });
+      showToast('回答に失敗しました');
+    }
   };
 
   // 匿名掲示板への投稿を送信する。
@@ -441,6 +450,7 @@ function StudentRoom() {
     return 'まもなく';
   };
   const openSurveys = room.surveys.filter((s) => s.isOpen); // 受付中のアンケート（バッジ表示の判定に使用）
+  const isSurveyAnswered = (survey: Survey) => (survey.responses?.length ?? 0) > 0 || answeredSurveys.has(survey.id);
 
   // タブリスト: 授業終了後に board タブ、チェック期間中に understanding タブが追加される
   // 要約は教師フィードバック専用のため生徒には表示しない
@@ -513,7 +523,7 @@ function StudentRoom() {
         <div className="max-w-2xl mx-auto flex overflow-x-auto">
           {tabs.map((t) => {
             const hasBadge =
-              (t.id === 'survey' && openSurveys.length > 0 && !openSurveys.every((s) => answeredSurveys.has(s.id)) && !isEnded) ||
+              (t.id === 'survey' && openSurveys.length > 0 && !openSurveys.every(isSurveyAnswered) && !isEnded) ||
               (t.id === 'understanding' && understandingActive && !understandingAnswered);
             return (
               <button
@@ -651,7 +661,7 @@ function StudentRoom() {
             ) : (
               // 最新のアンケートが上に来るよう逆順表示
               [...room.surveys].reverse().map((survey) => {
-                const answered = answeredSurveys.has(survey.id);
+                const answered = isSurveyAnswered(survey);
                 const total = survey.options.reduce((sum, o) => sum + o.votes, 0);
                 return (
                   <div key={survey.id}
