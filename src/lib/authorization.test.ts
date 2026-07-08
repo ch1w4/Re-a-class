@@ -34,7 +34,7 @@ function room(enrolled = false): RoomScope {
 describe('ページ認可', () => {
   const expectations: Record<Role, string[]> = {
     TEACHER: ['teacher', 'home'],
-    STUDENT: ['student', 'home', 'board'],
+    STUDENT: ['student', 'home'],
     SCHOOL_ADMIN: ['schoolAdmin', 'board'],
     SERVER_ADMIN: ['admin'],
   };

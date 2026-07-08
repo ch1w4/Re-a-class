@@ -220,9 +220,9 @@ export default function HomePage() {
                   <div className="flex items-center gap-2 flex-shrink-0">
                     {/* 教師向け: 参加人数を表示 */}
                     {r._count && <span className="text-xs text-gray-400">{r._count.enrollments}人</span>}
-                    {/* 生徒向け: 授業終了後は匿名掲示板へのリンクボタンを表示 */}
+                    {/* 生徒向け: 授業終了後は掲示板タブを開いた状態で授業画面へ遷移するリンクボタンを表示 */}
                     {r.endedAt && me?.role === 'STUDENT' && (
-                      <button onClick={() => router.push(`/board/${r.id}`)}
+                      <button onClick={() => router.push(`/student/${r.id}?tab=board`)}
                         className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-semibold hover:bg-indigo-200 transition">
                         掲示板
                       </button>
