@@ -8,6 +8,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { AirPlaneIcon } from '@/components/icons/airPlaneIcon';
+import { ClipboardIcon } from '@/components/icons/clipboardIcon';
+import { NoSymbolIcon } from '@/components/icons/nosymbolIcon';
 
 interface Me { id: string; displayName: string; role: string }
 interface BoardPost { id: string; content: string; authorLabel: string; createdAt: string }
@@ -133,7 +136,9 @@ export default function BoardPage() {
   if (error) return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="text-center">
-        <div className="text-5xl mb-4">🚫</div>
+        <div className="flex justify-center mb-4">
+          <NoSymbolIcon className="w-20 h-20 text-red-500" />
+        </div>
         <p className="text-gray-600 font-semibold">{error}</p>
         <button onClick={() => router.back()} className="mt-4 text-indigo-600 hover:underline text-sm">← 戻る</button>
       </div>
@@ -172,17 +177,27 @@ export default function BoardPage() {
 
       <div className="flex-1 overflow-y-auto p-4">
         {/* 匿名モード / 管理者モードの説明バナー */}
-        <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3 mb-4 text-xs text-indigo-700">
-          {isAdmin
-            ? '📋 管理者モードです。投稿者の実名が表示されています。'
-            : '📌 匿名掲示板です。名前は他の人に見えません。'}
+        <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3 mb-4 text-xs text-indigo-700 flex items-center gap-2">
+          {isAdmin ? (
+            <>
+              <ClipboardIcon className="w-5 h-5 shrink-0 text-gray-400" />
+              <span>管理者モードです。投稿者の実名が表示されています。</span>
+            </>
+          ) : (
+            <>
+              <AirPlaneIcon className="w-5 h-5 shrink-0" />
+              <span>匿名掲示板です。名前は他の人に見えません。</span>
+            </>
+          )}
         </div>
 
         {/* 投稿一覧 */}
         <div className="space-y-3 mb-4">
           {posts.length === 0 ? (
             <div className="text-center py-16">
-              <div className="text-5xl mb-4">📌</div>
+              <div className="flex justify-center mb-4">
+                <AirPlaneIcon className="w-12 h-12" />
+              </div>
               <p className="text-gray-500 font-semibold">まだ投稿がありません</p>
               {isStudent && <p className="text-gray-400 text-sm mt-2">最初の投稿をしてみよう！</p>}
             </div>

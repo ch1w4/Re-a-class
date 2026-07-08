@@ -5,8 +5,10 @@
 // 生徒: ルームID入力で授業参加 + 参加した講義一覧（終了済みは掲示板へのリンク付き）
 // 共通: ベルアイコンの通知ドロップダウン（未読バッジ表示）、10 秒ごとに通知を更新
 
+import Image from 'next/image';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { BellIcon } from '@/components/icons/bellIcon';
 
 interface Me { id: string; displayName: string; role: string; schoolName: string }
 interface Room {
@@ -55,7 +57,7 @@ export default function HomePage() {
   // rooms は変動が少ないのでポーリング対象外とする。
   useEffect(() => {
     const iv = setInterval(() => {
-      fetch('/api/notifications').then((r) => r.json()).then(setNotifications).catch(() => {});
+      fetch('/api/notifications').then((r) => r.json()).then(setNotifications).catch(() => { });
     }, 10000);
     return () => clearInterval(iv); // アンマウント時にタイマーを停止
   }, []);
@@ -130,8 +132,10 @@ export default function HomePage() {
           </div>
           <div className="flex items-center gap-4">
             {/* ベルアイコン: 未読があれば赤バッジを表示。クリックでドロップダウン開閉 */}
-            <button onClick={() => setShowNotif(!showNotif)} className="relative">
-              <span className="text-2xl">🔔</span>
+            <button onClick={() => setShowNotif(!showNotif)} className="p-2 rounded-full group" aria-label="通知">
+              <BellIcon
+                className="w-6 h-6 text-white transition-colors duration-200 group-hover:text-yellow-500"
+              />
               {unread > 0 && (
                 <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">
                   {unread}

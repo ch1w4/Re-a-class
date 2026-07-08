@@ -7,6 +7,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { ClipboardIcon } from '@/components/icons/clipboardIcon';
 
 type ReactionType = 'understood' | 'confused' | 'question' | 'slow' | 'fast';
 
@@ -16,7 +17,7 @@ interface Survey { id: string; question: string; options: SurveyOption[]; isOpen
 interface UnderstandingCheckResponse {
   id: string;
   comment: string;
-  createdAt: string; 
+  createdAt: string;
 }
 interface UnderstandingCheckInfo {
   scheduledAt: string;
@@ -35,11 +36,11 @@ interface Room {
 }
 
 const REACTION_INFO: Record<ReactionType, { label: string; emoji: string; bar: string }> = {
-  understood: { label: '理解した',       emoji: '👍', bar: 'bg-green-400' },
-  confused:   { label: 'わからない',     emoji: '🤔', bar: 'bg-red-400' },
-  question:   { label: '質問あり',       emoji: '✋', bar: 'bg-yellow-400' },
-  slow:       { label: 'もっとゆっくり', emoji: '🐢', bar: 'bg-blue-400' },
-  fast:       { label: 'もっと速く',     emoji: '🚀', bar: 'bg-purple-400' },
+  understood: { label: '理解した', emoji: '👍', bar: 'bg-green-400' },
+  confused: { label: 'わからない', emoji: '🤔', bar: 'bg-red-400' },
+  question: { label: '質問あり', emoji: '✋', bar: 'bg-yellow-400' },
+  slow: { label: 'もっとゆっくり', emoji: '🐢', bar: 'bg-blue-400' },
+  fast: { label: 'もっと速く', emoji: '🚀', bar: 'bg-purple-400' },
 };
 const REACTION_TYPES = Object.keys(REACTION_INFO) as ReactionType[];
 
@@ -96,7 +97,7 @@ export default function TeacherRoom() {
     fetch(`/api/rooms/${roomId}/qr`)
       .then((r) => r.json())
       .then((d) => { setQrDataUrl(d.qr); setStudentUrl(d.url); })
-      .catch(() => {});
+      .catch(() => { });
   }, [roomId, fetchRoom]);
 
   useEffect(() => {
@@ -291,12 +292,14 @@ export default function TeacherRoom() {
 
           {/* 理解度チェック状況（授業終了後のみ表示） */}
           {isEnded && room.understandingCheck && (
-            <div className={`bg-white rounded-2xl p-5 shadow-sm border ${
-              room.understandingCheck.talliedAt ? 'border-purple-200'
-              : (room.understandingCheck.notifiedAt && room.understandingCheck.tallyAt && new Date(room.understandingCheck.tallyAt) > new Date()) ? 'border-orange-200'
-              : 'border-blue-200'
-            }`}>
-              <h2 className="text-base font-bold text-gray-700 mb-2">📋 理解度チェック</h2>
+            <div className={`bg-white rounded-2xl p-5 shadow-sm border ${room.understandingCheck.talliedAt ? 'border-purple-200'
+                : (room.understandingCheck.notifiedAt && room.understandingCheck.tallyAt && new Date(room.understandingCheck.tallyAt) > new Date()) ? 'border-orange-200'
+                  : 'border-blue-200'
+              }`}>
+              <h2 className="flex items-center gap-2 text-base font-bold text-gray-700 mb-2">
+                <ClipboardIcon className="w-5 h-5 text-slate-500" />
+                <span>理解度チェック</span>
+              </h2>
               {room.understandingCheck.talliedAt ? (
                 <div>
                   <div className="flex items-center gap-2 mb-2">
@@ -309,7 +312,7 @@ export default function TeacherRoom() {
 
                   {room.understandingCheck.responses && room.understandingCheck.responses.length > 0 && (
                     <div className="border-t border-purple-100 pt-3 mt-3">
-                      <button 
+                      <button
                         onClick={() => setShowComments(!showComments)}
                         className="text-xs font-bold text-purple-600 hover:text-purple-800 flex items-center gap-1 transition-colors"
                       >
