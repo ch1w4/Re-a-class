@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/requireAuth';
+import { surveyOptionsOrderBy } from '@/lib/surveyOptions';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,7 +16,7 @@ const buildIncludeAll = (userId?: string) => ({
   reactions: { orderBy: { timestamp: 'asc' as const } },
   surveys: {
     include: {
-      options: true,
+      options: { orderBy: surveyOptionsOrderBy },
       responses: userId
         ? { where: { userId }, select: { id: true, optionId: true } }
         : { select: { id: true, optionId: true } },
