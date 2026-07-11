@@ -50,7 +50,7 @@ function plainTextToHtml(value: string): string {
 // リアクションボタンの定義: 通常状態(bg)とタップ時のハイライト状態(active)のスタイルを持つ
 const REACTION_BUTTONS: { type: ReactionType; label: string; emoji: string; bg: string; active: string }[] = [
   { type: 'slow',       label: 'もっとゆっくり', emoji: '🐢', bg: 'bg-blue-100 border-blue-300 text-blue-700',       active: 'bg-blue-500 border-blue-600 text-white' },
-  { type: 'fast',       label: 'もっと速く',     emoji: '🚀', bg: 'bg-purple-100 border-purple-300 text-purple-700', active: 'bg-purple-500 border-purple-600 text-white' },
+  { type: 'fast',       label: 'もっと速く',     emoji: '🐇', bg: 'bg-pink-100 border-pink-300 text-pink-700', active: 'bg-pink-500 border-pink-600 text-white' },
 ];
 
 function StudentRoom() {

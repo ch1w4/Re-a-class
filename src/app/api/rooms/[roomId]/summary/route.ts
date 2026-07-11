@@ -41,7 +41,7 @@ export async function POST(
 
   const reactionSummary = [
     `🐢 もっとゆっくり: ${counts['slow'] ?? 0}件`,
-    `🚀 もっと速く: ${counts['fast'] ?? 0}件`,
+    `🐇 もっと速く: ${counts['fast'] ?? 0}件`,
     `合計: ${room.reactions.length}件`,
   ].join('\n');
 

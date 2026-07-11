@@ -37,7 +37,7 @@ interface Room {
 
 const REACTION_INFO: Record<ReactionType, { label: string; emoji: string; bar: string }> = {
   slow: { label: 'もっとゆっくり', emoji: '🐢', bar: 'bg-blue-400' },
-  fast: { label: 'もっと速く', emoji: '🚀', bar: 'bg-purple-400' },
+  fast: { label: 'もっと速く', emoji: '🐇', bar: 'bg-pink-400' },
 };
 const REACTION_TYPES = Object.keys(REACTION_INFO) as ReactionType[];
 
