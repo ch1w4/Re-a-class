@@ -5,10 +5,11 @@
 // 生徒: ルームID入力で授業参加 + 参加した講義一覧（終了済みは掲示板へのリンク付き）
 // 共通: ベルアイコンの通知ドロップダウン（未読バッジ表示）、10 秒ごとに通知を更新
 
-import Image from 'next/image';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { BellIcon } from '@/components/icons/bellIcon';
+import { SettingIcon } from '@/components/icons/settiongicon';
+import { LogOutIcon } from '@/components/icons/logOutIcon';
 
 interface Me { id: string; displayName: string; role: string; schoolName: string }
 interface Room {
@@ -24,11 +25,14 @@ export default function HomePage() {
   const [rooms, setRooms] = useState<Room[]>([]);                          // 講義一覧（ロールごとに内容が異なる）
   const [notifications, setNotifications] = useState<Notification[]>([]); // 通知一覧（最新 50 件）
   const [showNotif, setShowNotif] = useState(false);                       // 通知ドロップダウンの開閉状態
+  const [showSettings, setShowSettings] = useState(false);                 // 設定ドロップダウンの開閉状態
+  const [showPasswordModal, setShowPasswordModal] = useState(false);       // パスワード変更モーダル
   const [roomId, setRoomId] = useState('');                                // 生徒が入力するルームID（参加時に使用）
   const [loading, setLoading] = useState(true);                            // 初回データ取得中のローディング状態
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null); // 削除確認中のルームID
   const [advancing, setAdvancing] = useState(false);   // 時間スキップ処理中フラグ
   const [advanceMsg, setAdvanceMsg] = useState('');    // スキップ結果メッセージ（3秒で消える）
+  const settingsRef = useRef<HTMLDivElement>(null);
 
   // 初回マウント時に me / rooms / notifications を並列取得する。
   // SERVER_ADMIN は /admin へ、SCHOOL_ADMIN は /school-admin へリダイレクト。
@@ -62,8 +66,21 @@ export default function HomePage() {
     return () => clearInterval(iv); // アンマウント時にタイマーを停止
   }, []);
 
+  // 設定ドロップダウン外クリックで閉じる
+  useEffect(() => {
+    if (!showSettings) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (settingsRef.current && !settingsRef.current.contains(e.target as Node)) {
+        setShowSettings(false);
+      }
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [showSettings]);
+
   // セッション Cookie を削除してログインページへ遷移
   const logout = async () => {
+    setShowSettings(false);
     await fetch('/api/auth/logout', { method: 'POST' });
     router.push('/login');
   };
@@ -124,28 +141,62 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-blue-700 text-white px-6 py-4 shadow sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <div>
+      <header className="bg-blue-700 text-white px-4 sm:px-6 py-4 shadow sticky top-0 z-10">
+        <div className="flex items-center justify-between w-full gap-3">
+          <div className="min-w-0">
             <span className="text-xl font-bold">Re:a Class</span>
-            <span className="ml-3 text-blue-200 text-sm">{me?.schoolName}</span>
+            <span className="ml-3 text-blue-200 text-sm hidden sm:inline">{me?.schoolName}</span>
           </div>
-          <div className="flex items-center gap-4">
-            {/* ベルアイコン: 未読があれば赤バッジを表示。クリックでドロップダウン開閉 */}
-            <button onClick={() => setShowNotif(!showNotif)} className="p-2 rounded-full group" aria-label="通知">
-              <BellIcon
-                className="w-6 h-6 text-white transition-colors duration-200 group-hover:text-yellow-500"
-              />
+          <div className="relative flex items-center gap-1 sm:gap-2 shrink-0 ml-auto" ref={settingsRef}>
+            {/* 名前 → 🔔 → 設定（スマホは名前タップでメニュー、設定アイコンは md 以上） */}
+            <button
+              type="button"
+              onClick={() => { setShowSettings(!showSettings); setShowNotif(false); }}
+              className="md:hidden font-semibold text-sm px-1 py-2 rounded-lg hover:bg-white/10 transition"
+              aria-label="メニュー"
+              aria-expanded={showSettings}
+            >
+              {me?.displayName}
+            </button>
+            <p className="hidden md:block font-semibold text-sm px-1">{me?.displayName}</p>
+            <button
+              onClick={() => { setShowNotif(!showNotif); setShowSettings(false); }}
+              className="relative p-2 rounded-full group"
+              aria-label="通知"
+            >
+              <BellIcon className="w-6 h-6 text-white transition-colors duration-200 group-hover:text-yellow-500" />
               {unread > 0 && (
                 <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">
                   {unread}
                 </span>
               )}
             </button>
-            <div className="text-right">
-              <p className="font-semibold text-sm">{me?.displayName}</p>
-              <button onClick={logout} className="text-xs text-blue-200 hover:text-white transition">ログアウト</button>
-            </div>
+            <button
+              type="button"
+              onClick={() => { setShowSettings(!showSettings); setShowNotif(false); }}
+              className="hidden md:block p-2 rounded-full group"
+              aria-label="設定"
+              aria-expanded={showSettings}
+            >
+              <SettingIcon className="w-6 h-6 text-white transition-colors duration-200 group-hover:text-blue-200" />
+            </button>
+            {showSettings && (
+              <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-2xl border border-gray-100 py-1 z-50">
+                <button
+                  onClick={() => { setShowSettings(false); setShowPasswordModal(true); }}
+                  className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition"
+                >
+                  パスワード変更
+                </button>
+                <button
+                  onClick={logout}
+                  className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition"
+                >
+                  <LogOutIcon className="w-4 h-4" />
+                  ログアウト
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </header>
@@ -169,6 +220,10 @@ export default function HomePage() {
             ))
           )}
         </div>
+      )}
+
+      {showPasswordModal && (
+        <PasswordChangeModal onClose={() => setShowPasswordModal(false)} />
       )}
 
       <div className="max-w-5xl mx-auto p-4 sm:p-6 space-y-6">
@@ -292,6 +347,122 @@ function RoomCreateForm({ onCreate }: { onCreate: (name: string) => void }) {
         className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 disabled:opacity-50 transition">
         開始
       </button>
+    </div>
+  );
+}
+
+function PasswordChangeModal({ onClose }: { onClose: () => void }) {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    if (!done) return;
+    const t = setTimeout(() => onClose(), 2000);
+    return () => clearTimeout(t);
+    // onClose は親のインライン関数のため依存に入れない（タイマーリセット防止）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [done]);
+
+  const submit = async () => {
+    setError('');
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setError('すべての項目を入力してください');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError('新しいパスワードが一致しません');
+      return;
+    }
+    if (newPassword.length < 4) {
+      setError('新しいパスワードは4文字以上にしてください');
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch('/api/auth/password', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error ?? '変更に失敗しました');
+        return;
+      }
+      setDone(true);
+    } catch {
+      setError('変更に失敗しました');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (done) {
+    return (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center pointer-events-none">
+        <div className="bg-gray-900 text-white text-sm font-semibold px-5 py-3 rounded-2xl shadow-xl">
+          変更が完了しました。
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-base font-bold text-gray-800">パスワード変更</h3>
+        <div>
+          <label className="block text-sm text-gray-600 mb-1">現在のパスワード</label>
+          <input
+            type="password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            className="w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
+        </div>
+        <div>
+          <label className="block text-sm text-gray-600 mb-1">新しいパスワード</label>
+          <input
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            className="w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
+        </div>
+        <div>
+          <label className="block text-sm text-gray-600 mb-1">新しいパスワード（確認）</label>
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && submit()}
+            className="w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
+        </div>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <div className="flex gap-2 justify-end pt-1">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition"
+          >
+            キャンセル
+          </button>
+          <button
+            onClick={submit}
+            disabled={saving}
+            className="px-4 py-2 text-sm font-bold text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-50 transition"
+          >
+            {saving ? '変更中...' : '変更する'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
