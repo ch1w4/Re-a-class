@@ -9,7 +9,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ClipboardIcon } from '@/components/icons/clipboardIcon';
 
-type ReactionType = 'understood' | 'confused' | 'question' | 'slow' | 'fast';
+type ReactionType = 'slow' | 'fast';
 
 interface Reaction { id: string; type: ReactionType; timestamp: string }
 interface SurveyOption { id: string; text: string; votes: number }
@@ -36,11 +36,8 @@ interface Room {
 }
 
 const REACTION_INFO: Record<ReactionType, { label: string; emoji: string; bar: string }> = {
-  understood: { label: '理解した', emoji: '👍', bar: 'bg-green-400' },
-  confused: { label: 'わからない', emoji: '🤔', bar: 'bg-red-400' },
-  question: { label: '質問あり', emoji: '✋', bar: 'bg-yellow-400' },
   slow: { label: 'もっとゆっくり', emoji: '🐢', bar: 'bg-blue-400' },
-  fast: { label: 'もっと速く', emoji: '🚀', bar: 'bg-purple-400' },
+  fast: { label: 'もっと速く', emoji: '🐇', bar: 'bg-pink-400' },
 };
 const REACTION_TYPES = Object.keys(REACTION_INFO) as ReactionType[];
 
@@ -58,6 +55,8 @@ export default function TeacherRoom() {
   const [copied, setCopied] = useState(false);
   const [endConfirm, setEndConfirm] = useState(false);
   const [showComments, setShowComments] = useState(false);
+  const [liveCheck, setLiveCheck] = useState<{ active: boolean; understood?: number; confused?: number; answered?: number } | null>(null);
+  const [startingLiveCheck, setStartingLiveCheck] = useState(false);
 
   const [notes, setNotes] = useState('');
   const [notesSaving, setNotesSaving] = useState(false);
@@ -104,6 +103,25 @@ export default function TeacherRoom() {
     const iv = setInterval(fetchRoom, 2000);
     return () => clearInterval(iv);
   }, [fetchRoom]);
+
+  const fetchLiveCheck = useCallback(async () => {
+    const res = await fetch(`/api/rooms/${roomId}/live-understanding`);
+    if (res.ok) setLiveCheck(await res.json());
+  }, [roomId]);
+
+  useEffect(() => {
+    void fetchLiveCheck();
+    const id = setInterval(fetchLiveCheck, 2000);
+    return () => clearInterval(id);
+  }, [fetchLiveCheck]);
+
+  const startLiveCheck = async () => {
+    setStartingLiveCheck(true);
+    try {
+      const res = await fetch(`/api/rooms/${roomId}/live-understanding`, { method: 'POST' });
+      if (res.ok) await fetchLiveCheck();
+    } finally { setStartingLiveCheck(false); }
+  };
 
   const startRecording = async () => {
     try {
@@ -202,8 +220,9 @@ export default function TeacherRoom() {
   );
 
   const isEnded = !!room.endedAt;
-  const counts = room.reactions.reduce<Record<string, number>>((acc, r) => { acc[r.type] = (acc[r.type] ?? 0) + 1; return acc; }, {});
-  const totalReactions = room.reactions.length;
+  const visibleReactions = room.reactions.filter((reaction) => REACTION_TYPES.includes(reaction.type));
+  const counts = visibleReactions.reduce<Record<string, number>>((acc, r) => { acc[r.type] = (acc[r.type] ?? 0) + 1; return acc; }, {});
+  const totalReactions = visibleReactions.length;
 
   const timeUntil = (iso: string): string => {
     const ms = new Date(iso).getTime() - Date.now();
@@ -440,6 +459,23 @@ export default function TeacherRoom() {
         <div className="order-1 lg:order-2 space-y-4">
 
           {/* リアクション集計 */}
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-teal-100">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-bold text-gray-700">理解度チェック</h2>
+                <p className="text-xs text-gray-400 mt-1">生徒に回答必須の確認画面を表示します</p>
+              </div>
+              {!isEnded && <button onClick={startLiveCheck} disabled={startingLiveCheck} className="shrink-0 rounded-xl bg-teal-600 px-4 py-2 text-sm font-bold text-white hover:bg-teal-700 disabled:opacity-50">
+                {startingLiveCheck ? '開始中...' : liveCheck?.active ? 'もう一度聞く' : '理解度チェック'}
+              </button>}
+            </div>
+            {liveCheck?.active && <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-xl bg-green-50 p-3"><p className="text-xl font-bold text-green-700">{liveCheck.understood ?? 0}</p><p className="text-xs text-green-600">理解した</p></div>
+              <div className="rounded-xl bg-red-50 p-3"><p className="text-xl font-bold text-red-700">{liveCheck.confused ?? 0}</p><p className="text-xs text-red-600">わからない</p></div>
+              <div className="rounded-xl bg-gray-50 p-3"><p className="text-xl font-bold text-gray-700">{liveCheck.answered ?? 0}</p><p className="text-xs text-gray-500">回答済み</p></div>
+            </div>}
+          </div>
+
           <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-base font-bold text-gray-700">リアクション集計</h2>
@@ -470,7 +506,7 @@ export default function TeacherRoom() {
           <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
             <h2 className="text-base font-bold text-gray-700 mb-3">最近のリアクション</h2>
             <div className="space-y-2 max-h-60 overflow-y-auto">
-              {[...room.reactions].reverse().slice(0, 15).map((r) => {
+              {[...visibleReactions].reverse().slice(0, 15).map((r) => {
                 const info = REACTION_INFO[r.type as ReactionType];
                 return (
                   <div key={r.id} className="flex items-center gap-2 text-sm">
@@ -480,7 +516,7 @@ export default function TeacherRoom() {
                   </div>
                 );
               })}
-              {room.reactions.length === 0 && <p className="text-center text-gray-400 text-sm py-4">まだリアクションはありません</p>}
+              {visibleReactions.length === 0 && <p className="text-center text-gray-400 text-sm py-4">まだリアクションはありません</p>}
             </div>
           </div>
 

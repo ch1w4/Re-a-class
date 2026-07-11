@@ -2,7 +2,8 @@
 // 生徒用授業画面 (/student/[roomId])
 // ロール STUDENT のみアクセス可能。
 // 主な機能:
-//   - 5 種類のリアクション送信（理解した・わからない・質問あり・ゆっくり・速く）
+//   - 授業ペースのリアクション送信（ゆっくり・速く）
+//   - 教師が開始する回答必須のライブ理解度チェック
 //   - アンケート回答・結果閲覧
 //   - 授業中メモ（DB保存）
 //   - 理解度チェック（授業終了 4 日後に通知 → スコア 1〜4 とコメントで回答）
@@ -18,7 +19,7 @@ import { AirPlaneIcon } from '@/components/icons/airPlaneIcon';
 import { NoSymbolIcon } from '@/components/icons/nosymbolIcon';
 import { PencilSquareIcon } from '@/components/icons/pencilSquareIcon';
 
-type ReactionType = 'understood' | 'confused' | 'question' | 'slow' | 'fast';
+type ReactionType = 'slow' | 'fast';
 // タブ ID の型: 授業中は reaction/memo/survey、終了後は board が追加、理解度チェック期間中は understanding が追加
 // 要約は教師フィードバック用のため生徒タブには含めない
 type Tab = 'reaction' | 'memo' | 'survey' | 'board' | 'understanding';
@@ -48,11 +49,8 @@ function plainTextToHtml(value: string): string {
 
 // リアクションボタンの定義: 通常状態(bg)とタップ時のハイライト状態(active)のスタイルを持つ
 const REACTION_BUTTONS: { type: ReactionType; label: string; emoji: string; bg: string; active: string }[] = [
-  { type: 'understood', label: '理解した',       emoji: '👍', bg: 'bg-green-100 border-green-300 text-green-700',    active: 'bg-green-500 border-green-600 text-white' },
-  { type: 'confused',   label: 'わからない',     emoji: '🤔', bg: 'bg-red-100 border-red-300 text-red-700',          active: 'bg-red-500 border-red-600 text-white' },
-  { type: 'question',   label: '質問あり',       emoji: '✋', bg: 'bg-yellow-100 border-yellow-300 text-yellow-700', active: 'bg-yellow-500 border-yellow-600 text-white' },
   { type: 'slow',       label: 'もっとゆっくり', emoji: '🐢', bg: 'bg-blue-100 border-blue-300 text-blue-700',       active: 'bg-blue-500 border-blue-600 text-white' },
-  { type: 'fast',       label: 'もっと速く',     emoji: '🚀', bg: 'bg-purple-100 border-purple-300 text-purple-700', active: 'bg-purple-500 border-purple-600 text-white' },
+  { type: 'fast',       label: 'もっと速く',     emoji: '🐇', bg: 'bg-pink-100 border-pink-300 text-pink-700', active: 'bg-pink-500 border-pink-600 text-white' },
 ];
 
 function StudentRoom() {
@@ -71,6 +69,8 @@ function StudentRoom() {
   // --- リアクション関連 ---
   // sentReaction: 直前に送ったリアクション種別。1.5 秒間ハイライト表示して null に戻す
   const [sentReaction, setSentReaction] = useState<ReactionType | null>(null);
+  const [liveCheck, setLiveCheck] = useState<{ id: string; answered: boolean } | null>(null);
+  const [liveCheckSubmitting, setLiveCheckSubmitting] = useState(false);
 
   // --- 生徒メモ関連 ---
   // 授業・ユーザーごとの個人メモとしてDBへ保存する
@@ -169,6 +169,22 @@ function StudentRoom() {
       }
     } catch { /* 失敗しても通常フローには影響しない */ }
   }, [roomId]);
+
+  const fetchLiveCheck = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/rooms/${roomId}/live-understanding`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setLiveCheck(data.active ? { id: data.id, answered: data.answered } : null);
+    } catch { /* 次回のポーリングで再試行する */ }
+  }, [roomId]);
+
+  useEffect(() => {
+    if (!me) return;
+    void fetchLiveCheck();
+    const id = setInterval(fetchLiveCheck, 2000);
+    return () => clearInterval(id);
+  }, [me, fetchLiveCheck]);
 
   const saveStudentNoteToServer = useCallback(async (html: string) => {
     if (!me) return;
@@ -365,6 +381,24 @@ function StudentRoom() {
     }
   };
 
+  const answerLiveCheck = async (understood: boolean) => {
+    if (!liveCheck || liveCheck.answered || liveCheckSubmitting) return;
+    setLiveCheckSubmitting(true);
+    try {
+      const res = await fetch(`/api/rooms/${roomId}/live-understanding`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ checkId: liveCheck.id, understood }),
+      });
+      if (res.ok || res.status === 409) {
+        setLiveCheck((current) => current ? { ...current, answered: true } : null);
+        showToast('回答しました！');
+      } else {
+        showToast('回答に失敗しました');
+        void fetchLiveCheck();
+      }
+    } finally { setLiveCheckSubmitting(false); }
+  };
+
   // アンケートに回答する。
   // DB 上の回答履歴と answeredSurveys にすでに存在すれば二重回答を防ぐ。
   // 楽観的 UI: API レスポンスを待たずに先に answeredSurveys を更新して UX を向上させる。
@@ -478,6 +512,24 @@ function StudentRoom() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
+      {liveCheck && !liveCheck.answered && (
+        <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="live-check-title">
+          <div className="w-full max-w-3xl rounded-[2rem] bg-white p-8 sm:p-12 shadow-2xl text-center">
+            <div className="text-7xl sm:text-8xl mb-6">📊</div>
+            <h2 id="live-check-title" className="text-3xl sm:text-4xl font-bold text-gray-800">理解度チェック</h2>
+            <p className="mt-4 mb-10 text-lg sm:text-2xl leading-relaxed text-gray-500">現在の授業内容を理解できましたか？<br />回答するまで授業画面は操作できません。</p>
+            <div className="grid grid-cols-2 gap-5 sm:gap-6">
+              <button disabled={liveCheckSubmitting} onClick={() => answerLiveCheck(true)} className="rounded-3xl border-4 border-green-300 bg-green-100 p-7 sm:p-10 text-xl sm:text-2xl font-bold text-green-700 hover:bg-green-200 disabled:opacity-50">
+                <span className="block text-6xl sm:text-7xl mb-4">👍</span>理解した
+              </button>
+              <button disabled={liveCheckSubmitting} onClick={() => answerLiveCheck(false)} className="rounded-3xl border-4 border-red-300 bg-red-100 p-7 sm:p-10 text-xl sm:text-2xl font-bold text-red-700 hover:bg-red-200 disabled:opacity-50">
+                <span className="block text-6xl sm:text-7xl mb-4">🤔</span>わからない
+              </button>
+            </div>
+            {liveCheckSubmitting && <p className="mt-6 text-lg sm:text-xl text-gray-400">送信中...</p>}
+          </div>
+        </div>
+      )}
       {/* トースト通知: 画面上部中央に 2 秒間表示 */}
       {toast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-gray-800 text-white text-sm px-4 py-2 rounded-full shadow-lg">
@@ -575,7 +627,7 @@ function StudentRoom() {
               </div>
             ) : (
               <>
-                <p className="text-center text-gray-500 text-sm mb-5">今の授業についてリアクションを送ろう！</p>
+                <p className="text-center text-gray-500 text-sm mb-5">授業のペースを先生に伝えよう！</p>
                 <div className="grid grid-cols-2 gap-3">
                   {REACTION_BUTTONS.map((btn) => (
                     <button
@@ -583,8 +635,7 @@ function StudentRoom() {
                       onClick={() => sendReaction(btn.type)}
                       className={`border-2 rounded-2xl p-5 flex flex-col items-center gap-2 font-semibold text-sm transition-all active:scale-95 ${
                         sentReaction === btn.type ? btn.active : btn.bg
-                      } ${btn.type === 'understood' ? 'col-span-2' : ''}`}
-                      // 「理解した」ボタンは 2 カラム幅で強調表示
+                      }`}
                     >
                       <span className="text-4xl">{btn.emoji}</span>
                       <span>{btn.label}</span>
