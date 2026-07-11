@@ -20,6 +20,7 @@ export async function POST(request: NextRequest, { params }: { params: { roomId:
   if (!room || !isEnrolledStudent(user!, room)) {
     return NextResponse.json({ error: 'Room not found' }, { status: 404 });
   }
+  if (room.endedAt) return NextResponse.json({ error: 'Room has ended' }, { status: 409 });
 
   const formData = await request.formData();
   const image = formData.get('image');

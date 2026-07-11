@@ -68,19 +68,30 @@ export default function TeacherRoom() {
   const [transcript, setTranscript] = useState('');
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const roomRequestRef = useRef<AbortController | null>(null);
+  const roomRequestRunningRef = useRef(false);
 
   const [showSurveyForm, setShowSurveyForm] = useState(false);
   const [surveyQuestion, setSurveyQuestion] = useState('');
   const [surveyOptions, setSurveyOptions] = useState(['', '']);
 
   const fetchRoom = useCallback(async () => {
+    if (roomRequestRunningRef.current) return;
+    roomRequestRunningRef.current = true;
+    const controller = new AbortController();
+    roomRequestRef.current = controller;
     try {
-      const res = await fetch(`/api/rooms/${roomId}`);
+      const res = await fetch(`/api/rooms/${roomId}`, { cache: 'no-store', signal: controller.signal });
       if (res.status === 401) { router.push('/login'); return; }
       if (!res.ok) { setError('ルームが見つかりません'); return; }
       setRoom(await res.json());
-    } catch { setError('接続エラー'); }
-    finally { setLoading(false); }
+      setError('');
+    } catch (cause) {
+      if (!(cause instanceof DOMException && cause.name === 'AbortError')) setError('接続エラー');
+    } finally {
+      roomRequestRunningRef.current = false;
+      setLoading(false);
+    }
   }, [roomId, router]);
 
   const initialized = useRef(false);
@@ -101,8 +112,22 @@ export default function TeacherRoom() {
   }, [roomId, fetchRoom]);
 
   useEffect(() => {
-    const iv = setInterval(fetchRoom, 2000);
-    return () => clearInterval(iv);
+    let interval: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (interval || document.visibilityState !== 'visible') return;
+      void fetchRoom();
+      interval = setInterval(() => void fetchRoom(), 2000);
+    };
+    const stop = () => { if (interval) clearInterval(interval); interval = null; };
+    const onVisibility = () => document.visibilityState === 'visible' ? start() : stop();
+    start();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVisibility);
+      roomRequestRef.current?.abort();
+      roomRequestRunningRef.current = false;
+    };
   }, [fetchRoom]);
 
   const startRecording = async () => {

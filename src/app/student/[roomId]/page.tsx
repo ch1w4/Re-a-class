@@ -8,7 +8,7 @@
 //   - 理解度チェック（授業終了 4 日後に通知 → スコア 1〜4 とコメントで回答）
 // 2 秒 polling でリアルタイム更新。参加登録（Enrollment）は入室時に自動実行。
 
-import { Suspense, useState, useEffect, useCallback, type ComponentType } from 'react';
+import { Suspense, useState, useEffect, useCallback, useRef, type ComponentType } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { ChartBarIcon } from '@/components/icons/chartBarIcon';
 import { CheckCircleIcon } from '@/components/icons/checkCircleIcon';
@@ -76,6 +76,10 @@ function StudentRoom() {
   // --- 生徒メモ関連 ---
   // 授業・ユーザーごとの個人メモとしてDBへ保存する
   const [studentNoteHtml, setStudentNoteHtml] = useState('');
+  const roomRequestRunningRef = useRef(false);
+  const understandingRequestRunningRef = useRef(false);
+  const roomRequestRef = useRef<AbortController | null>(null);
+  const understandingRequestRef = useRef<AbortController | null>(null);
 
   // --- アンケート関連 ---
   // answeredSurveys: 送信直後の楽観的 UI 用。最終判定は API から返る responses を使う。
@@ -135,22 +139,32 @@ function StudentRoom() {
 
   // ルームデータを取得する（2 秒ポーリングで繰り返し呼ばれる）
   const fetchRoom = useCallback(async () => {
+    if (roomRequestRunningRef.current) return;
+    roomRequestRunningRef.current = true;
+    const controller = new AbortController();
+    roomRequestRef.current = controller;
     try {
-      const res = await fetch(`/api/rooms/${roomId}`);
+      const res = await fetch(`/api/rooms/${roomId}`, { cache: 'no-store', signal: controller.signal });
       if (res.status === 401) { router.replace('/login'); return; }
       if (!res.ok) { setError('ルームが見つかりません'); return; }
       setRoom(await res.json());
-    } catch {
-      setError('接続エラー');
+      setError('');
+    } catch (cause) {
+      if (!(cause instanceof DOMException && cause.name === 'AbortError')) setError('接続エラー');
     } finally {
+      roomRequestRunningRef.current = false;
       setLoading(false);
     }
   }, [roomId, router]);
 
   // 理解度チェックの状態とタイミング情報を取得する
   const fetchUnderstanding = useCallback(async () => {
+    if (understandingRequestRunningRef.current) return;
+    understandingRequestRunningRef.current = true;
+    const controller = new AbortController();
+    understandingRequestRef.current = controller;
     try {
-      const res = await fetch(`/api/rooms/${roomId}/understanding`);
+      const res = await fetch(`/api/rooms/${roomId}/understanding`, { cache: 'no-store', signal: controller.signal });
       if (res.ok) {
         const data = await res.json();
         setUnderstandingActive(data.active);
@@ -162,16 +176,18 @@ function StudentRoom() {
           talliedAt: data.talliedAt ?? null,
         });
       }
-    } catch { /* 失敗しても通常フローには影響しない */ }
+    } catch { /* 失敗時は現在表示を維持する */ }
+    finally { understandingRequestRunningRef.current = false; }
   }, [roomId]);
 
   const saveStudentNoteToServer = useCallback(async (html: string) => {
-    if (!me) return;
-    await fetch(`/api/rooms/${roomId}/student-note`, {
+    if (!me) return false;
+    const response = await fetch(`/api/rooms/${roomId}/student-note`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ body: html }),
     });
+    return response.ok;
   }, [me, roomId]);
 
   // me が設定された（ログイン確認済み）タイミングで初回データ取得を実行
@@ -197,8 +213,7 @@ function StudentRoom() {
         : plainTextToHtml(savedLocal);
       if (!html && localHtml) {
         html = localHtml;
-        void saveStudentNoteToServer(localHtml);
-        localStorage.removeItem(localKey);
+        if (await saveStudentNoteToServer(localHtml)) localStorage.removeItem(localKey);
       }
 
       if (cancelled) return;
@@ -211,8 +226,25 @@ function StudentRoom() {
   // 2 秒ごとにポーリングを開始する。アンマウント時にクリアして無限ループを防ぐ。
   useEffect(() => {
     if (!me) return;
-    const iv = setInterval(() => { fetchRoom(); fetchUnderstanding(); }, 2000);
-    return () => clearInterval(iv);
+    let interval: ReturnType<typeof setInterval> | null = null;
+    const run = () => { void fetchRoom(); void fetchUnderstanding(); };
+    const start = () => {
+      if (interval || document.visibilityState !== 'visible') return;
+      run();
+      interval = setInterval(run, 2000);
+    };
+    const stop = () => { if (interval) clearInterval(interval); interval = null; };
+    const onVisibility = () => document.visibilityState === 'visible' ? start() : stop();
+    start();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVisibility);
+      roomRequestRef.current?.abort();
+      understandingRequestRef.current?.abort();
+      roomRequestRunningRef.current = false;
+      understandingRequestRunningRef.current = false;
+    };
   }, [me, fetchRoom, fetchUnderstanding]);
 
   // 掲示板タブ表示中は即時取得し、続けて 3 秒ごとに一覧をポーリングする。
@@ -504,7 +536,12 @@ function StudentRoom() {
         {tab === 'memo' && (
           <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
             <h2 className="mb-2 text-base font-bold text-gray-700">メモ</h2>
-            <StudentNoteEditor roomId={roomId} initialHtml={studentNoteHtml} />
+            <StudentNoteEditor
+              roomId={roomId}
+              initialHtml={studentNoteHtml}
+              readOnly={isEnded}
+              onLocalChange={setStudentNoteHtml}
+            />
           </div>
         )}
 

@@ -15,9 +15,16 @@ export async function PATCH(
   const { error, user } = await requireAuth(request);
   if (error) return error;
 
-  await prisma.notification.updateMany({
+  const notification = await prisma.notification.findFirst({
     where: { id: params.notifId, userId: user!.id },
-    data: { isRead: true },
+    select: { id: true },
   });
-  return NextResponse.json({ ok: true });
+  if (!notification) return NextResponse.json({ error: 'Notification not found' }, { status: 404 });
+
+  const updated = await prisma.notification.update({
+    where: { id: notification.id },
+    data: { isRead: true },
+    select: { id: true, type: true, title: true, body: true, link: true, isRead: true, createdAt: true },
+  });
+  return NextResponse.json(updated);
 }

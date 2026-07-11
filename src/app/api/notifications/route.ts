@@ -10,13 +10,26 @@ import { requireAuth } from '@/lib/requireAuth';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
-  const { error, user } = await requireAuth(request);
+  const { error, user } = await requireAuth(request, ['TEACHER', 'STUDENT']);
   if (error) return error;
 
-  const notifications = await prisma.notification.findMany({
-    where: { userId: user!.id },
-    orderBy: { createdAt: 'desc' },
-    take: 50,
+  const allowedType = user!.role === 'TEACHER' ? 'UNDERSTANDING_RESULT' : 'UNDERSTANDING_CHECK';
+
+  const rows = await prisma.notification.findMany({
+    where: { userId: user!.id, type: allowedType },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: 100,
+    select: { id: true, type: true, title: true, body: true, link: true, isRead: true, createdAt: true },
   });
-  return NextResponse.json(notifications);
+
+  // 同じ授業・種別の通知が過去の競合で複数作られていても、最新の1件だけ返す。
+  const seen = new Set<string>();
+  const notifications = rows.filter((notification) => {
+    const key = notification.link ? `${notification.type}:${notification.link}` : notification.id;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 50);
+
+  return NextResponse.json(notifications, { headers: { 'Cache-Control': 'no-store' } });
 }
