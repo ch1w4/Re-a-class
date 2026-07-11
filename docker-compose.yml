@@ -28,6 +28,9 @@ services:
       SERVER_ADMIN_ID: ${SERVER_ADMIN_ID}
       SERVER_ADMIN_PASS: ${SERVER_ADMIN_PASS}
       SERVER_ADMIN_NAME: ${SERVER_ADMIN_NAME:-システム管理者}
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      - uploads_data:/app/uploads
     depends_on:
       db:
         condition: service_healthy
@@ -50,3 +53,4 @@ services:
 
 volumes:
   postgres_data:
+  uploads_data:
