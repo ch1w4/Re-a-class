@@ -33,6 +33,7 @@ COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 RUN mkdir -p node_modules/.bin && ln -sf /app/node_modules/prisma/build/index.js node_modules/.bin/prisma
+RUN mkdir -p /app/uploads && chown nextjs:nodejs /app/uploads
 
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
