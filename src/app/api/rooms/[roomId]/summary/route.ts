@@ -40,11 +40,8 @@ export async function POST(
   const counts = room.reactions.reduce<Record<string, number>>((acc, r) => { acc[r.type] = (acc[r.type] ?? 0) + 1; return acc; }, {});
 
   const reactionSummary = [
-    `👍 理解した: ${counts['understood'] ?? 0}件`,
-    `🤔 わからない: ${counts['confused'] ?? 0}件`,
-    `✋ 質問あり: ${counts['question'] ?? 0}件`,
     `🐢 もっとゆっくり: ${counts['slow'] ?? 0}件`,
-    `🚀 もっと速く: ${counts['fast'] ?? 0}件`,
+    `🐇 もっと速く: ${counts['fast'] ?? 0}件`,
     `合計: ${room.reactions.length}件`,
   ].join('\n');
 
