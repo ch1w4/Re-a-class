@@ -6,7 +6,7 @@
 // 共通: ベルアイコンの通知ドロップダウン（未読バッジ表示）、10 秒ごとに通知を更新
 
 import Image from 'next/image';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { BellIcon } from '@/components/icons/bellIcon';
 
@@ -16,7 +16,18 @@ interface Room {
   teacher?: { displayName: string };  // 生徒向けレスポンスのみ付与される教師名
   _count?: { enrollments: number };   // 教師・管理者向けレスポンスのみ付与される参加者数
 }
-interface Notification { id: string; title: string; body: string; link: string | null; isRead: boolean; createdAt: string }
+interface Notification { id: string; type: string; title: string; body: string; link: string | null; isRead: boolean; createdAt: string }
+
+function isNotificationArray(value: unknown): value is Notification[] {
+  return Array.isArray(value) && value.every((item) => {
+    if (!item || typeof item !== 'object') return false;
+    const row = item as Record<string, unknown>;
+    return typeof row.id === 'string' && typeof row.type === 'string'
+      && typeof row.title === 'string' && typeof row.body === 'string'
+      && (typeof row.link === 'string' || row.link === null)
+      && typeof row.isRead === 'boolean' && typeof row.createdAt === 'string';
+  });
+}
 
 export default function HomePage() {
   const router = useRouter();
@@ -29,43 +40,98 @@ export default function HomePage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null); // 削除確認中のルームID
   const [advancing, setAdvancing] = useState(false);   // 時間スキップ処理中フラグ
   const [advanceMsg, setAdvanceMsg] = useState('');    // スキップ結果メッセージ（3秒で消える）
+  const [notificationError, setNotificationError] = useState('');
+  const notificationGenerationRef = useRef(0);
+  const pageLoadGenerationRef = useRef(0);
+  const notificationControllerRef = useRef<AbortController | null>(null);
+  const notificationLoadingRef = useRef(false);
 
   // 初回マウント時に me / rooms / notifications を並列取得する。
   // SERVER_ADMIN は /admin へ、SCHOOL_ADMIN は /school-admin へリダイレクト。
   // TEACHER / STUDENT のみここに残ってダッシュボードを表示する。
   const fetchAll = useCallback(async () => {
-    const [meRes, roomsRes, notifRes] = await Promise.all([
-      fetch('/api/auth/me'),
-      fetch('/api/rooms'),
-      fetch('/api/notifications'),
-    ]);
-    if (!meRes.ok) { router.push('/login'); return; }
-    const meData = await meRes.json();
-    // 管理者ロールは専用パネルへ振り分け
-    if (meData.role === 'SERVER_ADMIN') { router.replace('/admin'); return; }
-    if (meData.role === 'SCHOOL_ADMIN') { router.replace('/school-admin'); return; }
-    setMe(meData);
-    if (roomsRes.ok) setRooms(await roomsRes.json());
-    if (notifRes.ok) setNotifications(await notifRes.json());
-    setLoading(false);
+    const generation = pageLoadGenerationRef.current;
+    try {
+      const meRes = await fetch('/api/auth/me', { cache: 'no-store' });
+      if (generation !== pageLoadGenerationRef.current) return;
+      if (!meRes.ok) { router.push('/login'); return; }
+      const meData = await meRes.json();
+      if (meData.role === 'SERVER_ADMIN') { router.replace('/admin'); return; }
+      if (meData.role === 'SCHOOL_ADMIN') { router.replace('/school-admin'); return; }
+      setNotifications([]);
+      setNotificationError('');
+      setMe(meData);
+
+      const roomsRes = await fetch('/api/rooms', { cache: 'no-store' });
+      if (generation !== pageLoadGenerationRef.current) return;
+      if (roomsRes.ok) setRooms(await roomsRes.json());
+    } catch {
+      setNotificationError('データの取得に失敗しました');
+    } finally {
+      setLoading(false);
+    }
   }, [router]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  // 通知は 10 秒ごとに静かに更新する。
-  // 理解度チェック通知（授業終了 4 日後）をリアルタイムに反映するために必要。
-  // rooms は変動が少ないのでポーリング対象外とする。
   useEffect(() => {
-    const iv = setInterval(() => {
-      fetch('/api/notifications').then((r) => r.json()).then(setNotifications).catch(() => { });
-    }, 10000);
-    return () => clearInterval(iv); // アンマウント時にタイマーを停止
-  }, []);
+    notificationGenerationRef.current += 1;
+    const generation = notificationGenerationRef.current;
+    notificationControllerRef.current?.abort();
+    setNotifications([]);
+    setNotificationError('');
+    if (!me) return;
+
+    let interval: ReturnType<typeof setInterval> | null = null;
+    const refresh = async () => {
+      if (notificationLoadingRef.current || document.visibilityState !== 'visible') return;
+      notificationLoadingRef.current = true;
+      const controller = new AbortController();
+      notificationControllerRef.current = controller;
+      try {
+        const response = await fetch('/api/notifications', { cache: 'no-store', signal: controller.signal });
+        if (response.status === 401) { router.replace('/login'); return; }
+        if (!response.ok) throw new Error('notification request failed');
+        const data: unknown = await response.json();
+        if (!isNotificationArray(data)) throw new Error('invalid notification response');
+        if (notificationGenerationRef.current !== generation) return;
+        const unique = Array.from(new Map(data.map((item) => [`${item.type}:${item.link ?? item.id}`, item])).values());
+        setNotifications(unique);
+        setNotificationError('');
+      } catch (cause) {
+        if (cause instanceof DOMException && cause.name === 'AbortError') return;
+        if (notificationGenerationRef.current === generation) setNotificationError('通知を取得できませんでした');
+      } finally {
+        if (notificationGenerationRef.current === generation) notificationLoadingRef.current = false;
+      }
+    };
+    const start = () => {
+      if (interval || document.visibilityState !== 'visible') return;
+      void refresh();
+      interval = setInterval(() => void refresh(), 10000);
+    };
+    const stop = () => { if (interval) clearInterval(interval); interval = null; };
+    const onVisibility = () => document.visibilityState === 'visible' ? start() : stop();
+
+    start();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVisibility);
+      notificationControllerRef.current?.abort();
+      notificationLoadingRef.current = false;
+    };
+  }, [me, router]);
 
   // セッション Cookie を削除してログインページへ遷移
   const logout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' });
-    router.push('/login');
+    notificationGenerationRef.current += 1;
+    pageLoadGenerationRef.current += 1;
+    notificationControllerRef.current?.abort();
+    setNotifications([]);
+    setMe(null);
+    try { await fetch('/api/auth/logout', { method: 'POST' }); }
+    finally { router.push('/login'); }
   };
 
   // 教師が授業を開始する: ルームを POST で作成し、即座に教師用授業画面へ遷移
@@ -85,10 +151,16 @@ export default function HomePage() {
   // 通知をクリックしたとき: 既読フラグをサーバーに送り、link があれば遷移する。
   // ローカル state を直接 map 更新することで再フェッチなしでバッジをリアルタイム更新。
   const markRead = async (id: string, link: string | null) => {
-    await fetch(`/api/notifications/${id}`, { method: 'PATCH' });
-    setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, isRead: true } : n));
-    if (link) router.push(link);
-    setShowNotif(false);
+    try {
+      const response = await fetch(`/api/notifications/${id}`, { method: 'PATCH' });
+      if (!response.ok) throw new Error('mark read failed');
+      setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, isRead: true } : n));
+      if (link?.startsWith('/')) router.push(link);
+      setShowNotif(false);
+      setNotificationError('');
+    } catch {
+      setNotificationError('通知を既読にできませんでした');
+    }
   };
 
   // デモ用: 時間をスキップして理解度チェックの通知・集計処理を即時実行する
@@ -132,7 +204,7 @@ export default function HomePage() {
           </div>
           <div className="flex items-center gap-4">
             {/* ベルアイコン: 未読があれば赤バッジを表示。クリックでドロップダウン開閉 */}
-            <button onClick={() => setShowNotif(!showNotif)} className="p-2 rounded-full group" aria-label="通知">
+            <button onClick={() => setShowNotif(!showNotif)} className="relative p-2 rounded-full group" aria-label="通知">
               <BellIcon
                 className="w-6 h-6 text-white transition-colors duration-200 group-hover:text-yellow-500"
               />
@@ -156,6 +228,14 @@ export default function HomePage() {
           <div className="p-4 border-b">
             <h3 className="font-bold text-gray-700">通知</h3>
           </div>
+          {notificationError && (
+            <div className="border-b bg-red-50 p-3 text-xs text-red-600">
+              <div className="flex items-center justify-between gap-2">
+                <span>{notificationError}</span>
+                <button type="button" onClick={() => void fetchAll()} className="font-semibold underline">再取得</button>
+              </div>
+            </div>
+          )}
           {notifications.length === 0 ? (
             <p className="p-4 text-gray-400 text-sm text-center">通知はありません</p>
           ) : (

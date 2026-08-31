@@ -20,7 +20,6 @@ export async function GET(
   if (!room || !isEnrolledStudent(user!, room)) {
     return NextResponse.json({ error: 'Room not found' }, { status: 404 });
   }
-
   const note = await prisma.studentNote.findUnique({
     where: { userId_roomId: { userId: user!.id, roomId: params.roomId } },
     select: { body: true, updatedAt: true },
@@ -42,6 +41,9 @@ export async function PATCH(
   const room = await getRoomScope(params.roomId, user!.id);
   if (!room || !isEnrolledStudent(user!, room)) {
     return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+  }
+  if (room.endedAt) {
+    return NextResponse.json({ error: 'Room has ended' }, { status: 409 });
   }
 
   const { body } = await request.json().catch(() => ({}));

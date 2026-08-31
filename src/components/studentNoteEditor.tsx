@@ -22,13 +22,15 @@ const TEXT_COLORS = [
   { label: '紫', value: '#9333ea' },
 ] as const;
 
-interface Props { roomId: string; initialHtml: string; }
+interface Props { roomId: string; initialHtml: string; readOnly?: boolean; onLocalChange?: (html: string) => void; }
 
-export function StudentNoteEditor({ roomId, initialHtml }: Props) {
+export function StudentNoteEditor({ roomId, initialHtml, readOnly = false, onLocalChange }: Props) {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestHtmlRef = useRef('');
   const savedHtmlRef = useRef('');
   const savingRef = useRef<Promise<void> | null>(null);
+  const dirtyRef = useRef(false);
+  const composingRef = useRef(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef(false);
   const hasDrawingRef = useRef(false);
@@ -44,11 +46,18 @@ export function StudentNoteEditor({ roomId, initialHtml }: Props) {
       while (latestHtmlRef.current !== savedHtmlRef.current) {
         const html = latestHtmlRef.current;
         setSaveState('saving');
-        const response = await fetch(`/api/rooms/${roomId}/student-note`, {
-          method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body: html }),
-        });
-        if (!response.ok) { setSaveState('error'); return; }
+        let response: Response;
+        try {
+          response = await fetch(`/api/rooms/${roomId}/student-note`, {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body: html }),
+          });
+        } catch {
+          setSaveState('error');
+          return;
+        }
+        if (!response.ok) { setSaveState(response.status === 409 ? 'idle' : 'error'); return; }
         savedHtmlRef.current = html;
+        dirtyRef.current = latestHtmlRef.current !== savedHtmlRef.current;
       }
       setSaveState('saved');
     };
@@ -58,10 +67,13 @@ export function StudentNoteEditor({ roomId, initialHtml }: Props) {
 
   const scheduleSave = useCallback((html: string) => {
     latestHtmlRef.current = html;
+    dirtyRef.current = html !== savedHtmlRef.current;
+    onLocalChange?.(html);
     setSaveState('idle');
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    if (composingRef.current || readOnly || !dirtyRef.current) return;
     saveTimerRef.current = setTimeout(() => void saveLatest(), 700);
-  }, [saveLatest]);
+  }, [onLocalChange, readOnly, saveLatest]);
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -107,6 +119,18 @@ export function StudentNoteEditor({ roomId, initialHtml }: Props) {
         }, 0);
         return false;
       },
+      handleDOMEvents: {
+        compositionstart: () => {
+          composingRef.current = true;
+          if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+          return false;
+        },
+        compositionend: (view) => {
+          composingRef.current = false;
+          scheduleSave(view.state.doc.content.size > 0 ? view.dom.innerHTML : '<p></p>');
+          return false;
+        },
+      },
     },
     onUpdate: ({ editor: instance }) => scheduleSave(instance.getHTML()),
     onSelectionUpdate: ({ editor: instance }) => {
@@ -117,10 +141,18 @@ export function StudentNoteEditor({ roomId, initialHtml }: Props) {
   useEffect(() => {
     if (!editor) return;
     const html = normalizeStudentNoteHtml(initialHtml);
+    if (dirtyRef.current) return;
     editor.commands.setContent(html, false);
     latestHtmlRef.current = editor.getHTML();
     savedHtmlRef.current = editor.getHTML();
+    dirtyRef.current = false;
   }, [editor, initialHtml]);
+
+  useEffect(() => {
+    if (!editor) return;
+    editor.setEditable(!readOnly);
+    if (readOnly && dirtyRef.current) void saveLatest();
+  }, [editor, readOnly, saveLatest]);
 
   useEffect(() => {
     const flush = () => {
@@ -171,7 +203,7 @@ export function StudentNoteEditor({ roomId, initialHtml }: Props) {
   };
 
   const insertHandwriting = async () => {
-    if (!editor || !canvasRef.current || uploading) return;
+    if (!editor || !canvasRef.current || uploading || readOnly) return;
     if (!hasDrawingRef.current) { setMessage('手書きしてから追加してください'); return; }
     setUploading(true); setMessage('');
     try {
@@ -188,7 +220,7 @@ export function StudentNoteEditor({ roomId, initialHtml }: Props) {
   };
 
   const deleteImage = async () => {
-    if (!editor || !editor.isActive('image')) return;
+    if (!editor || !editor.isActive('image') || readOnly) return;
     const src = String(editor.getAttributes('image').src || '');
     const id = src.match(/^\/api\/student-note-images\/([^/?#]+)/)?.[1];
     if (id) {
@@ -215,13 +247,14 @@ export function StudentNoteEditor({ roomId, initialHtml }: Props) {
 
   return <>
     <div className="mb-2 flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 p-2">
-      <button type="button" onClick={() => toggleMark('bold')} aria-pressed={editor.isActive('bold')} className={`rounded-lg border px-2 py-1 text-sm font-bold ${editor.isActive('bold') ? 'border-teal-400 bg-teal-100 text-teal-700' : 'border-gray-200 bg-white text-gray-700'}`}>B</button>
-      <button type="button" onClick={() => toggleMark('underline')} aria-pressed={editor.isActive('underline')} className={`rounded-lg border px-2 py-1 text-sm font-semibold underline ${editor.isActive('underline') ? 'border-teal-400 bg-teal-100 text-teal-700' : 'border-gray-200 bg-white text-gray-700'}`}>U</button>
-      <select value={currentSize} onChange={(event) => editor.chain().focus().setFontSize(event.target.value).run()} className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700">
+      <button type="button" disabled={readOnly} onClick={() => toggleMark('bold')} aria-pressed={editor.isActive('bold')} className={`rounded-lg border px-2 py-1 text-sm font-bold disabled:opacity-50 ${editor.isActive('bold') ? 'border-teal-400 bg-teal-100 text-teal-700' : 'border-gray-200 bg-white text-gray-700'}`}>B</button>
+      <button type="button" disabled={readOnly} onClick={() => toggleMark('underline')} aria-pressed={editor.isActive('underline')} className={`rounded-lg border px-2 py-1 text-sm font-semibold underline disabled:opacity-50 ${editor.isActive('underline') ? 'border-teal-400 bg-teal-100 text-teal-700' : 'border-gray-200 bg-white text-gray-700'}`}>U</button>
+      <select disabled={readOnly} value={currentSize} onChange={(event) => editor.chain().focus().setFontSize(event.target.value).run()} className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700 disabled:opacity-50">
         {FONT_SIZES.map((size) => <option key={size.value} value={size.value}>{size.label}</option>)}
       </select>
       <select
         value={selectedColor}
+        disabled={readOnly}
         onChange={(event) => {
           setSelectedColor(event.target.value);
           editor.chain().focus().setColor(event.target.value).run();
@@ -233,16 +266,19 @@ export function StudentNoteEditor({ roomId, initialHtml }: Props) {
         {!isKnownColor && <option value={selectedColor} style={{ color: selectedColor }}>色：現在の色</option>}
         {TEXT_COLORS.map((color) => <option key={color.value} value={color.value} style={{ color: color.value }}>色：{color.label}</option>)}
       </select>
-      <button type="button" onClick={() => editor.chain().focus().unsetAllMarks().setFontSize('14px').setColor('#111827').run()} className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm font-semibold text-gray-700">書式解除</button>
-      <button type="button" onClick={() => setShowHandwriting(true)} className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm font-semibold text-gray-700">手書き</button>
+      <button type="button" disabled={readOnly} onClick={() => editor.chain().focus().unsetAllMarks().setFontSize('14px').setColor('#111827').run()} className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm font-semibold text-gray-700 disabled:opacity-50">書式解除</button>
+      <button type="button" disabled={readOnly} onClick={() => setShowHandwriting(true)} className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm font-semibold text-gray-700 disabled:opacity-50">手書き</button>
     </div>
     {imageSelected && <div className="mb-2 flex flex-wrap gap-2 rounded-xl border border-teal-200 bg-teal-50 p-2">
-      {(['40%', '70%', '100%'] as const).map((width, index) => <button key={width} type="button" onClick={() => editor.chain().focus().updateAttributes('image', { width }).run()} className="rounded border border-teal-200 bg-white px-2 py-1 text-xs text-teal-700">{['小', '中', '大'][index]}</button>)}
-      {(['left', 'center', 'right'] as const).map((align) => <button key={align} type="button" onClick={() => editor.chain().focus().updateAttributes('image', { align }).run()} className="rounded border border-teal-200 bg-white px-2 py-1 text-xs text-teal-700">{{ left: '左', center: '中央', right: '右' }[align]}</button>)}
-      <button type="button" onClick={deleteImage} className="rounded border border-red-200 bg-white px-2 py-1 text-xs text-red-600">削除</button>
+      {(['40%', '70%', '100%'] as const).map((width, index) => <button key={width} type="button" disabled={readOnly} onClick={() => editor.chain().focus().updateAttributes('image', { width }).run()} className="rounded border border-teal-200 bg-white px-2 py-1 text-xs text-teal-700 disabled:opacity-50">{['小', '中', '大'][index]}</button>)}
+      {(['left', 'center', 'right'] as const).map((align) => <button key={align} type="button" disabled={readOnly} onClick={() => editor.chain().focus().updateAttributes('image', { align }).run()} className="rounded border border-teal-200 bg-white px-2 py-1 text-xs text-teal-700 disabled:opacity-50">{{ left: '左', center: '中央', right: '右' }[align]}</button>)}
+      <button type="button" disabled={readOnly} onClick={deleteImage} className="rounded border border-red-200 bg-white px-2 py-1 text-xs text-red-600 disabled:opacity-50">削除</button>
     </div>}
     <EditorContent editor={editor} onBlur={() => void saveLatest()} className="overflow-y-auto rounded-xl border border-gray-200 focus-within:ring-2 focus-within:ring-teal-400" />
-    <p className={`mt-2 text-xs ${saveState === 'error' ? 'text-red-500' : 'text-gray-400'}`}>{saveState === 'saving' ? '保存中...' : saveState === 'saved' ? '保存しました' : saveState === 'error' ? '保存に失敗しました。入力内容は画面に保持されています' : 'サーバーに自動保存されます'}</p>
+    <div className="mt-2 flex items-center gap-2">
+      <p className={`text-xs ${saveState === 'error' ? 'text-red-500' : 'text-gray-400'}`}>{readOnly ? '授業終了後は編集できません' : saveState === 'saving' ? '保存中...' : saveState === 'saved' ? '保存しました' : saveState === 'error' ? '保存に失敗しました。入力内容は画面に保持されています' : 'サーバーに自動保存されます'}</p>
+      {saveState === 'error' && !readOnly && <button type="button" onClick={() => void saveLatest()} className="text-xs font-semibold text-red-600 underline">再試行</button>}
+    </div>
     {message && <p className="mt-1 text-xs text-red-500">{message}</p>}
     {showHandwriting && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"><div className="w-full max-w-2xl rounded-2xl bg-white p-4 shadow-xl">
       <div className="mb-3 flex justify-between"><h3 className="font-bold text-gray-700">手書き入力</h3><button type="button" onClick={() => setShowHandwriting(false)} className="text-sm text-gray-500">閉じる</button></div>

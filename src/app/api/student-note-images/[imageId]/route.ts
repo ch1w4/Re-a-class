@@ -36,6 +36,8 @@ export async function DELETE(request: NextRequest, { params }: { params: { image
   if (!image || image.userId !== user!.id) {
     return NextResponse.json({ error: 'Image not found' }, { status: 404 });
   }
+  const room = await prisma.room.findUnique({ where: { id: image.roomId }, select: { endedAt: true } });
+  if (room?.endedAt) return NextResponse.json({ error: 'Room has ended' }, { status: 409 });
 
   await prisma.studentNoteImage.delete({ where: { id: image.id } });
   await fs.unlink(path.join(getStudentNoteImageDir(), image.fileName)).catch(() => undefined);

@@ -35,17 +35,24 @@ export async function POST(request: NextRequest) {
     // 回答者ゼロの場合も先生に通知して talliedAt を記録する
     if (total === 0) {
       const resultBody = '回答者: 0人（未回答）';
-      await prisma.notification.create({
-        data: {
-          userId: check.room.teacher.id,
-          type: 'UNDERSTANDING_RESULT',
-          title: '理解度チェック結果のお知らせ',
-          body: `「${check.room.name}」の理解度チェックへの回答がありませんでした。`,
-          link: `/teacher/${check.room.id}`,
-        },
+      const claimed = await prisma.$transaction(async (tx) => {
+        const claim = await tx.understandingCheck.updateMany({
+          where: { id: check.id, talliedAt: null },
+          data: { talliedAt: now, resultBody },
+        });
+        if (claim.count === 0) return false;
+        await tx.notification.create({
+          data: {
+            userId: check.room.teacher.id,
+            type: 'UNDERSTANDING_RESULT',
+            title: '理解度チェック結果のお知らせ',
+            body: `「${check.room.name}」の理解度チェックへの回答がありませんでした。`,
+            link: `/teacher/${check.room.id}`,
+          },
+        });
+        return true;
       });
-      await prisma.understandingCheck.update({ where: { id: check.id }, data: { talliedAt: now, resultBody } });
-      tallied++;
+      if (claimed) tallied++;
       continue;
     }
 
@@ -89,19 +96,24 @@ export async function POST(request: NextRequest) {
       ? `「${check.room.name}」: ${total}人中${poorCount}人が理解できなかったと回答しました。授業ページで詳細を確認してください。`
       : `「${check.room.name}」: ${total}人中${poorCount}人が理解できなかったと回答しました。`;
 
-    await prisma.notification.create({
-      data: {
-        userId: check.room.teacher.id,
-        type: 'UNDERSTANDING_RESULT',
-        title: '理解度チェック結果のお知らせ',
-        body: notifBody,
-        link: `/teacher/${check.room.id}`,
-      },
+    const claimed = await prisma.$transaction(async (tx) => {
+      const claim = await tx.understandingCheck.updateMany({
+        where: { id: check.id, talliedAt: null },
+        data: { talliedAt: now, resultBody },
+      });
+      if (claim.count === 0) return false;
+      await tx.notification.create({
+        data: {
+          userId: check.room.teacher.id,
+          type: 'UNDERSTANDING_RESULT',
+          title: '理解度チェック結果のお知らせ',
+          body: notifBody,
+          link: `/teacher/${check.room.id}`,
+        },
+      });
+      return true;
     });
-
-    // 集計完了と resultBody を同時に保存（二重集計防止）
-    await prisma.understandingCheck.update({ where: { id: check.id }, data: { talliedAt: now, resultBody } });
-    tallied++;
+    if (claimed) tallied++;
   }
 
   return NextResponse.json({ tallied });
